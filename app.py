@@ -174,6 +174,9 @@ if 'codigo_actual' not in st.session_state:
     st.session_state.codigo_actual = ""
 if 'mensaje_error' not in st.session_state:
     st.session_state.mensaje_error = ""
+# Key dinámica para limpiar el input
+if 'input_key' not in st.session_state:
+    st.session_state.input_key = 0
 
 # ============ FUNCIONES ============
 
@@ -463,12 +466,12 @@ else:
     col1, col2 = st.columns([4, 1])
     
     with col1:
-        # Input simple sin formulario
+        # Usar key dinámica para poder limpiar el input
         codigo_input = st.text_input(
             "Código de barras",
             placeholder="🔍 Escanea o escribe el código y presiona Enter...",
             label_visibility="collapsed",
-            key="input_busqueda"
+            key=f"input_busqueda_{st.session_state.input_key}"
         )
     
     with col2:
@@ -476,18 +479,12 @@ else:
     
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # PROCESAR BÚSQUEDA - se ejecuta cuando hay texto O cuando se presiona el botón
-    if codigo_input or buscar_btn:
-        # Determinar el código a buscar
-        if buscar_btn:
-            # Si se presionó el botón, usar el valor actual del input
-            codigo = st.session_state.get("input_busqueda", "").strip()
-        else:
-            # Si se escribió algo (Enter), usar ese valor
-            codigo = codigo_input.strip()
+    # PROCESAR BÚSQUEDA
+    if codigo_input:
+        codigo = codigo_input.strip()
         
         if codigo and codigo != st.session_state.codigo_actual:
-            # Guardar el código
+            # Guardar código
             st.session_state.codigo_actual = codigo
             
             # Buscar
@@ -500,9 +497,31 @@ else:
                 st.session_state.resultado_actual = None
                 st.session_state.mensaje_error = f"❌ Producto no encontrado: {codigo}"
             
-            # Limpiar el input cambiando su key
-            st.session_state.input_busqueda = ""
+            # Incrementar key para limpiar el input
+            st.session_state.input_key += 1
             st.rerun()
+    
+    # También buscar con el botón
+    if buscar_btn:
+        # Obtener el valor actual del input (antes de limpiar)
+        input_actual = st.session_state.get(f"input_busqueda_{st.session_state.input_key}", "").strip()
+        
+        if input_actual and input_actual != st.session_state.codigo_actual:
+            st.session_state.codigo_actual = input_actual
+            
+            resultado = buscar_producto(input_actual, st.session_state.df)
+            
+            if not resultado.empty:
+                st.session_state.resultado_actual = resultado.iloc[0]
+                st.session_state.mensaje_error = ""
+            else:
+                st.session_state.resultado_actual = None
+                st.session_state.mensaje_error = f"❌ Producto no encontrado: {input_actual}"
+            
+            st.session_state.input_key += 1
+            st.rerun()
+        elif not input_actual:
+            st.warning("⚠️ Ingresa un código para buscar")
     
     # MOSTRAR RESULTADOS
     if st.session_state.resultado_actual is not None:
@@ -533,5 +552,5 @@ else:
 st.markdown("---")
 st.markdown(
     "<p style='text-align: center; color: #999; font-size: 12px;'>"
-    "App de Consulta de Descuentos v2.4 | Desarrollado con Streamlit</p>",
+    "App de Consulta de Descuentos v2.5 | Desarrollado con Streamlit</p>",
     unsafe_allow_html=True)
