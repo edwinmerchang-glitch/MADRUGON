@@ -168,13 +168,12 @@ if 'total_productos' not in st.session_state:
     st.session_state.total_productos = 0
 if 'modo_debug' not in st.session_state:
     st.session_state.modo_debug = False
-# Estados para la búsqueda
 if 'resultado_actual' not in st.session_state:
     st.session_state.resultado_actual = None
 if 'codigo_actual' not in st.session_state:
     st.session_state.codigo_actual = ""
-if 'input_value' not in st.session_state:
-    st.session_state.input_value = ""
+if 'mensaje_error' not in st.session_state:
+    st.session_state.mensaje_error = ""
 
 # ============ FUNCIONES ============
 
@@ -461,50 +460,57 @@ else:
     # Buscador
     st.markdown('<div class="search-container">', unsafe_allow_html=True)
     
-    # Usar un formulario para manejar el submit
-    with st.form(key="busqueda_form", clear_on_submit=True):
-        col1, col2 = st.columns([4, 1])
-        
-        with col1:
-            codigo_input = st.text_input(
-                "Código de barras",
-                placeholder="🔍 Escanea o escribe el código de barras del producto...",
-                label_visibility="collapsed",
-                key="codigo_busqueda"
-            )
-        
-        with col2:
-            submitted = st.form_submit_button("🔍 Buscar", type="primary", use_container_width=True)
+    col1, col2 = st.columns([4, 1])
+    
+    with col1:
+        # Input simple sin formulario
+        codigo_input = st.text_input(
+            "Código de barras",
+            placeholder="🔍 Escanea o escribe el código y presiona Enter...",
+            label_visibility="collapsed",
+            key="input_busqueda"
+        )
+    
+    with col2:
+        buscar_btn = st.button("🔍 Buscar", type="primary", use_container_width=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # Procesar búsqueda cuando se envía el formulario
-    if submitted and codigo_input:
-        codigo = codigo_input.strip()
+    # PROCESAR BÚSQUEDA - se ejecuta cuando hay texto O cuando se presiona el botón
+    if codigo_input or buscar_btn:
+        # Determinar el código a buscar
+        if buscar_btn:
+            # Si se presionó el botón, usar el valor actual del input
+            codigo = st.session_state.get("input_busqueda", "").strip()
+        else:
+            # Si se escribió algo (Enter), usar ese valor
+            codigo = codigo_input.strip()
         
-        if codigo:
-            # Realizar búsqueda
+        if codigo and codigo != st.session_state.codigo_actual:
+            # Guardar el código
+            st.session_state.codigo_actual = codigo
+            
+            # Buscar
             resultado = buscar_producto(codigo, st.session_state.df)
             
             if not resultado.empty:
                 st.session_state.resultado_actual = resultado.iloc[0]
-                st.session_state.codigo_actual = codigo
+                st.session_state.mensaje_error = ""
             else:
                 st.session_state.resultado_actual = None
-                st.session_state.codigo_actual = codigo
+                st.session_state.mensaje_error = f"❌ Producto no encontrado: {codigo}"
             
-            # Forzar rerun para limpiar el form
+            # Limpiar el input cambiando su key
+            st.session_state.input_busqueda = ""
             st.rerun()
     
-    # Mostrar resultado guardado en el estado
+    # MOSTRAR RESULTADOS
     if st.session_state.resultado_actual is not None:
         st.success(f"✅ Producto encontrado: {st.session_state.codigo_actual}")
         
-        # Obtener y mostrar info del producto
         info_producto = obtener_info_producto(st.session_state.resultado_actual)
         mostrar_producto(info_producto)
         
-        # Debug
         if st.session_state.modo_debug:
             with st.expander("🔧 Diagnóstico"):
                 st.write("**Código buscado:**", st.session_state.codigo_actual)
@@ -513,20 +519,19 @@ else:
                 st.write("**Datos completos:**")
                 st.dataframe(pd.DataFrame([st.session_state.resultado_actual]), use_container_width=True)
     
-    elif st.session_state.codigo_actual and st.session_state.resultado_actual is None:
-        st.error(f"❌ Producto no encontrado: {st.session_state.codigo_actual}")
+    elif st.session_state.mensaje_error:
+        st.error(st.session_state.mensaje_error)
         
         with st.expander("💡 Ayuda"):
-            st.write("**Primeros productos en la base:**")
+            st.write("**Primeros 5 productos en la base:**")
             st.dataframe(st.session_state.df.head(5), use_container_width=True)
     
-    # Si no hay búsqueda previa, mostrar mensaje inicial
     elif not st.session_state.codigo_actual:
-        st.info("👆 Ingresa un código de barras y presiona Buscar o Enter")
+        st.info("👆 Ingresa un código de barras y presiona Enter")
 
 # Footer
 st.markdown("---")
 st.markdown(
     "<p style='text-align: center; color: #999; font-size: 12px;'>"
-    "App de Consulta de Descuentos v2.3 | Desarrollado con Streamlit</p>",
+    "App de Consulta de Descuentos v2.4 | Desarrollado con Streamlit</p>",
     unsafe_allow_html=True)
