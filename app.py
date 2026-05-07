@@ -130,6 +130,24 @@ st.markdown("""
         margin: 20px 0;
     }
     
+    /* Ocultar el label del input para que sea más limpio */
+    .stTextInput > label {
+        display: none;
+    }
+    
+    /* Input más grande y visible */
+    .stTextInput input {
+        font-size: 18px !important;
+        padding: 12px 15px !important;
+        border: 2px solid #e0e0e0 !important;
+        border-radius: 10px !important;
+    }
+    
+    .stTextInput input:focus {
+        border-color: #FF416C !important;
+        box-shadow: 0 0 0 2px rgba(255, 65, 108, 0.2) !important;
+    }
+    
     @media (max-width: 768px) {
         .porcentaje-descuento {
             font-size: 60px;
@@ -152,6 +170,10 @@ if 'total_productos' not in st.session_state:
     st.session_state.total_productos = 0
 if 'modo_debug' not in st.session_state:
     st.session_state.modo_debug = False
+if 'ultimo_codigo' not in st.session_state:
+    st.session_state.ultimo_codigo = ""
+if 'codigo_input_key' not in st.session_state:
+    st.session_state.codigo_input_key = 0
 
 # ============ FUNCIONES ============
 
@@ -161,7 +183,6 @@ def cargar_datos(archivo):
     try:
         df = pd.read_excel(archivo, sheet_name="8")
         
-        # Convertir columnas de código a string
         for col in df.columns:
             col_lower = col.strip().lower()
             if any(keyword in col_lower for keyword in ['ean', 'código', 'codigo', 'code']):
@@ -173,10 +194,7 @@ def cargar_datos(archivo):
         return None
 
 def obtener_info_producto(fila):
-    """
-    Extrae información del producto con lógica mejorada para distinguir
-    entre porcentajes y precios reales
-    """
+    """Extrae información del producto con lógica mejorada"""
     info = {
         'nombre': None,
         'precio_venta': None,
@@ -185,7 +203,7 @@ def obtener_info_producto(fila):
         'porcentaje_descuento': None
     }
     
-    # Primero, identificar el porcentaje de descuento (valor pequeño, generalmente ≤ 100)
+    # Identificar porcentaje de descuento
     for col in fila.index:
         col_lower = col.strip().lower()
         valor = fila[col]
@@ -193,22 +211,20 @@ def obtener_info_producto(fila):
         if pd.isna(valor) or str(valor).strip() == '':
             continue
         
-        # Buscar específicamente columnas de porcentaje
         if any(kw in col_lower for kw in ['porcentaje', '%', 'dscto']) and \
            not any(kw in col_lower for kw in ['precio', 'venta', 'valor']):
             try:
                 valor_float = float(str(valor).replace('%', '').replace(',', '.').strip())
-                # Si el valor es pequeño (0-100), es un porcentaje
                 if 0 < valor_float <= 100:
                     if valor_float <= 1:
                         info['porcentaje_descuento'] = valor_float * 100
                     else:
                         info['porcentaje_descuento'] = valor_float
-                    continue  # Ya encontramos el porcentaje, seguir con otros campos
+                    continue
             except:
                 pass
     
-    # Ahora buscar precios (valores grandes, típicamente > 1000)
+    # Buscar precios
     for col in fila.index:
         col_lower = col.strip().lower()
         valor = fila[col]
@@ -217,39 +233,33 @@ def obtener_info_producto(fila):
             continue
         
         try:
-            # Intentar convertir a número
             valor_str = str(valor).replace('$', '').replace(',', '').strip()
             valor_float = float(valor_str)
             
-            # Ignorar valores que son claramente porcentajes (≤ 100)
             if valor_float <= 100 and any(kw in col_lower for kw in ['%', 'porcentaje', 'descuento']):
                 continue
             
-            # Ignorar códigos (generalmente son strings muy largos)
-            if valor_float > 100000000:  # Más de 100 millones, probablemente un código
+            if valor_float > 100000000:
                 continue
             
-            # Detectar precio original
             if info['precio_venta'] is None:
                 if any(kw in col_lower for kw in ['precio', 'venta']) and \
                    not any(kw in col_lower for kw in ['descuento', 'final', 'dscto', 'oferta', 'especial']):
-                    if valor_float > 100:  # Asumimos que precios son > 100
+                    if valor_float > 100:
                         info['precio_venta'] = valor_float
                         continue
             
-            # Detectar precio con descuento
             if info['precio_descuento'] is None:
                 if any(kw in col_lower for kw in ['precio']) and \
                    any(kw in col_lower for kw in ['descuento', 'final', 'dscto', 'oferta', 'especial']):
-                    if valor_float > 100:  # Asumimos que precios son > 100
+                    if valor_float > 100:
                         info['precio_descuento'] = valor_float
                         continue
             
         except (ValueError, TypeError):
-            # No es un número, podría ser nombre o marca
             pass
     
-    # Buscar nombre del producto (texto que no sea número)
+    # Buscar nombre
     for col in fila.index:
         col_lower = col.strip().lower()
         valor = fila[col]
@@ -257,29 +267,26 @@ def obtener_info_producto(fila):
         if pd.isna(valor) or str(valor).strip() == '':
             continue
         
-        # Solo buscar nombre en columnas que no son de precios/códigos
         if not any(kw in col_lower for kw in ['precio', 'descuento', 'ean', 'codigo', 'supplier', 
                                                 'day', 'linea', 'estado', 'number', 'número']):
             try:
                 float(str(valor).replace('$', '').replace(',', ''))
             except:
                 if info['nombre'] is None:
-                    # Verificar que el valor tenga al menos 3 caracteres y contenga letras
                     valor_str = str(valor).strip()
                     if len(valor_str) > 3 and any(c.isalpha() for c in valor_str):
                         info['nombre'] = valor_str
         
-        # Buscar marca
         if info['marca'] is None:
             if any(kw in col_lower for kw in ['marca', 'brand']):
                 info['marca'] = str(valor).strip()
     
-    # Si no se encontró precio con descuento pero tenemos precio original y porcentaje
+    # Calcular precio con descuento si no existe
     if info['precio_descuento'] is None and info['precio_venta'] and info['porcentaje_descuento']:
         descuento_decimal = info['porcentaje_descuento'] / 100
         info['precio_descuento'] = info['precio_venta'] * (1 - descuento_decimal)
     
-    # Si no se encontró porcentaje pero tenemos ambos precios
+    # Calcular porcentaje si no existe
     if info['porcentaje_descuento'] is None and info['precio_venta'] and info['precio_descuento']:
         if info['precio_venta'] > info['precio_descuento']:
             info['porcentaje_descuento'] = ((info['precio_venta'] - info['precio_descuento']) / 
@@ -290,7 +297,6 @@ def obtener_info_producto(fila):
 def mostrar_producto(info):
     """Muestra la información del producto formateada"""
     
-    # Contenedor de descuento
     if info['porcentaje_descuento'] and info['porcentaje_descuento'] > 0:
         st.markdown(f"""
         <div class="descuento-container">
@@ -300,19 +306,15 @@ def mostrar_producto(info):
         </div>
         """, unsafe_allow_html=True)
     
-    # Tarjeta del producto
     st.markdown('<div class="producto-card">', unsafe_allow_html=True)
     
-    # Nombre
     if info['nombre']:
         st.markdown(f'<div class="producto-nombre">{info["nombre"]}</div>', unsafe_allow_html=True)
     
-    # Marca
     if info['marca']:
         st.markdown(f'<div style="text-align: center;"><span class="producto-marca">🏷️ {info["marca"]}</span></div>', 
                    unsafe_allow_html=True)
     
-    # Precios
     if info['precio_venta'] or info['precio_descuento']:
         st.markdown('<div class="precio-container">', unsafe_allow_html=True)
         
@@ -336,7 +338,6 @@ def mostrar_producto(info):
         
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # Ahorro
     if info['precio_venta'] and info['precio_descuento']:
         ahorro = info['precio_venta'] - info['precio_descuento']
         if ahorro > 0:
@@ -353,7 +354,6 @@ with st.sidebar:
     st.title("🛒 Descuentos App")
     st.markdown("---")
     
-    # Carga de archivo
     st.header("📂 Datos")
     
     archivo_subido = st.file_uploader(
@@ -374,7 +374,6 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Estado
     st.header("📊 Estado")
     
     if st.session_state.datos_cargados:
@@ -396,10 +395,12 @@ with st.sidebar:
     
     st.markdown("---")
     
-    # Opciones
     st.header("⚙️ Opciones")
     
     st.session_state.modo_debug = st.checkbox("Modo diagnóstico", value=False)
+    
+    # Opción para controlar si se borra el código después de buscar
+    auto_limpiar = st.checkbox("🗑️ Limpiar búsqueda automáticamente", value=True)
     
     if st.session_state.datos_cargados:
         if st.button("🗑️ Limpiar datos", use_container_width=True):
@@ -415,9 +416,12 @@ with st.sidebar:
         st.write("""
         **App de Consulta de Descuentos**
         
-        Versión: 2.0
+        Versión: 2.1
         
-        Carga un archivo Excel y busca productos por código de barras.
+        - Carga un archivo Excel
+        - Escanea un código de barras
+        - El código se limpia automáticamente
+        - Listo para el siguiente escaneo
         """)
 
 # ============ CONTENIDO PRINCIPAL ============
@@ -449,10 +453,11 @@ else:
     col1, col2 = st.columns([4, 1])
     
     with col1:
+        # Usar una key dinámica para forzar la limpieza del input
         codigo = st.text_input(
-            "",
+            "Código de barras",
             placeholder="🔍 Escanea o escribe el código de barras del producto...",
-            key="codigo_input",
+            key=f"codigo_input_{st.session_state.codigo_input_key}",
             label_visibility="collapsed"
         )
     
@@ -461,10 +466,14 @@ else:
     
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # Resultados
-    if codigo or buscar:
-        if codigo:
-            codigo = codigo.strip()
+    # Lógica de búsqueda y limpieza automática
+    if codigo:
+        codigo = codigo.strip()
+        
+        # Solo buscar si el código es diferente al último buscado
+        if codigo != st.session_state.ultimo_codigo:
+            st.session_state.ultimo_codigo = codigo
+            
             df = st.session_state.df
             
             # Búsqueda
@@ -482,36 +491,44 @@ else:
             if not resultado.empty:
                 fila = resultado.iloc[0]
                 
-                # Obtener y mostrar información
+                # Mostrar información
                 info_producto = obtener_info_producto(fila)
                 mostrar_producto(info_producto)
                 
                 # Debug
                 if st.session_state.modo_debug:
                     with st.expander("🔧 Diagnóstico"):
+                        st.write("**Código buscado:**", codigo)
                         st.write("**Información detectada:**")
                         st.json(info_producto)
-                        st.write("**Datos completos de la fila:**")
+                        st.write("**Datos completos:**")
                         st.dataframe(pd.DataFrame([fila]), use_container_width=True)
                 
                 # Múltiples resultados
                 if len(resultado) > 1:
                     with st.expander(f"📋 {len(resultado)} coincidencias"):
                         st.dataframe(resultado, use_container_width=True, hide_index=True)
-            
+                
             else:
-                st.error("❌ Producto no encontrado")
+                st.error(f"❌ Producto no encontrado: {codigo}")
                 
                 with st.expander("💡 Ayuda"):
                     st.write("**Primeros productos en la base:**")
                     st.dataframe(df.head(5), use_container_width=True)
-        else:
-            st.warning("⚠️ Ingresa un código para buscar")
+            
+            # Limpiar el campo automáticamente después de buscar
+            if auto_limpiar:
+                st.session_state.codigo_input_key += 1
+                st.rerun()
+    
+    # También buscar al hacer clic en el botón
+    if buscar and not codigo:
+        st.warning("⚠️ Ingresa un código para buscar")
 
 # Footer
 st.markdown("---")
 st.markdown(
     "<p style='text-align: center; color: #999; font-size: 12px;'>"
-    "App de Consulta de Descuentos v1.0 | Desarrollado por Edwin Merchan</p>",
+    "App de Consulta de Descuentos v2.1 | Desarrollado con Streamlit</p>",
     unsafe_allow_html=True
 )
