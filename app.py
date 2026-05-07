@@ -168,13 +168,13 @@ if 'total_productos' not in st.session_state:
     st.session_state.total_productos = 0
 if 'modo_debug' not in st.session_state:
     st.session_state.modo_debug = False
-if 'codigo_input_key' not in st.session_state:
-    st.session_state.codigo_input_key = 0
-# Guardar el resultado de la búsqueda en el estado
-if 'resultado_busqueda' not in st.session_state:
-    st.session_state.resultado_busqueda = None
-if 'codigo_buscado' not in st.session_state:
-    st.session_state.codigo_buscado = ""
+# Estados para la búsqueda
+if 'resultado_actual' not in st.session_state:
+    st.session_state.resultado_actual = None
+if 'codigo_actual' not in st.session_state:
+    st.session_state.codigo_actual = ""
+if 'input_value' not in st.session_state:
+    st.session_state.input_value = ""
 
 # ============ FUNCIONES ============
 
@@ -196,6 +196,9 @@ def cargar_datos(archivo):
 
 def buscar_producto(codigo, df):
     """Busca un producto por código"""
+    if not codigo or df is None:
+        return pd.DataFrame()
+    
     mascara = pd.Series(False, index=df.index)
     for col in df.columns:
         col_lower = col.strip().lower()
@@ -207,7 +210,7 @@ def buscar_producto(codigo, df):
     return df[mascara]
 
 def obtener_info_producto(fila):
-    """Extrae información del producto con lógica mejorada"""
+    """Extrae información del producto"""
     info = {
         'nombre': None,
         'precio_venta': None,
@@ -383,9 +386,8 @@ with st.sidebar:
                 st.session_state.datos_cargados = True
                 st.session_state.nombre_archivo = archivo_subido.name
                 st.session_state.total_productos = len(df)
-                # Limpiar resultados anteriores al cargar nuevo archivo
-                st.session_state.resultado_busqueda = None
-                st.session_state.codigo_buscado = ""
+                st.session_state.resultado_actual = None
+                st.session_state.codigo_actual = ""
                 st.success("✅ Archivo cargado!")
     
     st.markdown("---")
@@ -407,11 +409,11 @@ with st.sidebar:
         </div>
         """, unsafe_allow_html=True)
         
-        if st.session_state.codigo_buscado:
+        if st.session_state.codigo_actual:
             st.markdown(f"""
             <div class="status-card">
                 <div class="status-title">Última búsqueda</div>
-                <div class="status-value" style="font-size: 14px;">{st.session_state.codigo_buscado}</div>
+                <div class="status-value" style="font-size: 14px;">{st.session_state.codigo_actual}</div>
             </div>
             """, unsafe_allow_html=True)
     else:
@@ -423,32 +425,15 @@ with st.sidebar:
     
     st.session_state.modo_debug = st.checkbox("Modo diagnóstico", value=False)
     
-    # Opción para controlar si se borra el código después de buscar
-    auto_limpiar = st.checkbox("🗑️ Limpiar búsqueda automáticamente", value=True)
-    
     if st.session_state.datos_cargados:
         if st.button("🗑️ Limpiar datos", use_container_width=True):
             st.session_state.datos_cargados = False
             st.session_state.df = None
             st.session_state.nombre_archivo = ""
             st.session_state.total_productos = 0
-            st.session_state.resultado_busqueda = None
-            st.session_state.codigo_buscado = ""
+            st.session_state.resultado_actual = None
+            st.session_state.codigo_actual = ""
             st.rerun()
-    
-    st.markdown("---")
-    
-    with st.expander("ℹ️ Información"):
-        st.write("""
-        **App de Consulta de Descuentos**
-        
-        Versión: 2.2
-        
-        - Carga un archivo Excel
-        - Escanea un código de barras
-        - El código se limpia automáticamente
-        - Listo para el siguiente escaneo
-        """)
 
 # ============ CONTENIDO PRINCIPAL ============
 
@@ -476,91 +461,72 @@ else:
     # Buscador
     st.markdown('<div class="search-container">', unsafe_allow_html=True)
     
-    col1, col2 = st.columns([4, 1])
-    
-    with col1:
-        # Input con key dinámica para limpiar
-        codigo = st.text_input(
-            "Código de barras",
-            placeholder="🔍 Escanea o escribe el código de barras del producto...",
-            key=f"codigo_input_{st.session_state.codigo_input_key}",
-            label_visibility="collapsed"
-        )
-    
-    with col2:
-        buscar_btn = st.button("🔍 Buscar", type="primary", use_container_width=True)
+    # Usar un formulario para manejar el submit
+    with st.form(key="busqueda_form", clear_on_submit=True):
+        col1, col2 = st.columns([4, 1])
+        
+        with col1:
+            codigo_input = st.text_input(
+                "Código de barras",
+                placeholder="🔍 Escanea o escribe el código de barras del producto...",
+                label_visibility="collapsed",
+                key="codigo_busqueda"
+            )
+        
+        with col2:
+            submitted = st.form_submit_button("🔍 Buscar", type="primary", use_container_width=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # Procesar búsqueda cuando hay código nuevo
-    if codigo:
-        codigo = codigo.strip()
+    # Procesar búsqueda cuando se envía el formulario
+    if submitted and codigo_input:
+        codigo = codigo_input.strip()
         
-        # Solo buscar si el código es diferente al último buscado
-        if codigo != st.session_state.codigo_buscado:
-            # Guardar el código buscado
-            st.session_state.codigo_buscado = codigo
-            
+        if codigo:
             # Realizar búsqueda
             resultado = buscar_producto(codigo, st.session_state.df)
             
             if not resultado.empty:
-                # Guardar resultado en el estado
-                st.session_state.resultado_busqueda = {
-                    'encontrado': True,
-                    'fila': resultado.iloc[0],
-                    'total_coincidencias': len(resultado),
-                    'codigo': codigo
-                }
+                st.session_state.resultado_actual = resultado.iloc[0]
+                st.session_state.codigo_actual = codigo
             else:
-                st.session_state.resultado_busqueda = {
-                    'encontrado': False,
-                    'codigo': codigo
-                }
+                st.session_state.resultado_actual = None
+                st.session_state.codigo_actual = codigo
             
-            # Limpiar el campo después de buscar
-            if auto_limpiar:
-                st.session_state.codigo_input_key += 1
-                st.rerun()
+            # Forzar rerun para limpiar el form
+            st.rerun()
     
-    # Mostrar resultado guardado
-    if st.session_state.resultado_busqueda is not None:
-        resultado = st.session_state.resultado_busqueda
+    # Mostrar resultado guardado en el estado
+    if st.session_state.resultado_actual is not None:
+        st.success(f"✅ Producto encontrado: {st.session_state.codigo_actual}")
         
-        if resultado['encontrado']:
-            st.success(f"✅ Producto encontrado: {resultado['codigo']}")
-            
-            # Obtener y mostrar info del producto
-            info_producto = obtener_info_producto(resultado['fila'])
-            mostrar_producto(info_producto)
-            
-            # Debug
-            if st.session_state.modo_debug:
-                with st.expander("🔧 Diagnóstico"):
-                    st.write("**Código buscado:**", resultado['codigo'])
-                    st.write("**Información detectada:**")
-                    st.json(info_producto)
-                    st.write("**Datos completos:**")
-                    st.dataframe(pd.DataFrame([resultado['fila']]), use_container_width=True)
-            
-            # Múltiples resultados
-            if resultado['total_coincidencias'] > 1:
-                with st.expander(f"📋 {resultado['total_coincidencias']} coincidencias"):
-                    # Volver a buscar para mostrar todas
-                    todas = buscar_producto(resultado['codigo'], st.session_state.df)
-                    st.dataframe(todas, use_container_width=True, hide_index=True)
+        # Obtener y mostrar info del producto
+        info_producto = obtener_info_producto(st.session_state.resultado_actual)
+        mostrar_producto(info_producto)
         
-        else:
-            st.error(f"❌ Producto no encontrado: {resultado['codigo']}")
-            
-            with st.expander("💡 Ayuda"):
-                st.write("**Primeros productos en la base:**")
-                st.dataframe(st.session_state.df.head(5), use_container_width=True)
+        # Debug
+        if st.session_state.modo_debug:
+            with st.expander("🔧 Diagnóstico"):
+                st.write("**Código buscado:**", st.session_state.codigo_actual)
+                st.write("**Información detectada:**")
+                st.json(info_producto)
+                st.write("**Datos completos:**")
+                st.dataframe(pd.DataFrame([st.session_state.resultado_actual]), use_container_width=True)
+    
+    elif st.session_state.codigo_actual and st.session_state.resultado_actual is None:
+        st.error(f"❌ Producto no encontrado: {st.session_state.codigo_actual}")
+        
+        with st.expander("💡 Ayuda"):
+            st.write("**Primeros productos en la base:**")
+            st.dataframe(st.session_state.df.head(5), use_container_width=True)
+    
+    # Si no hay búsqueda previa, mostrar mensaje inicial
+    elif not st.session_state.codigo_actual:
+        st.info("👆 Ingresa un código de barras y presiona Buscar o Enter")
 
 # Footer
 st.markdown("---")
 st.markdown(
     "<p style='text-align: center; color: #999; font-size: 12px;'>"
-    "App de Consulta de Descuentos v2.2 | Desarrollado con Streamlit</p>",
-    unsafe_allow_html=True
-)
+    "App de Consulta de Descuentos v2.3 | Desarrollado con Streamlit</p>",
+    unsafe_allow_html=True)
