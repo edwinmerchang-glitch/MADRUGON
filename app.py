@@ -92,6 +92,13 @@ st.markdown("""
         text-align: center;
         background: #fafafa;
     }
+    .debug-box {
+        background: #fff3cd;
+        border: 1px solid #ffc107;
+        padding: 10px;
+        border-radius: 5px;
+        margin: 10px 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -102,6 +109,8 @@ if 'df' not in st.session_state:
     st.session_state.df = None
 if 'nombre_archivo' not in st.session_state:
     st.session_state.nombre_archivo = ""
+if 'mostrar_columnas' not in st.session_state:
+    st.session_state.mostrar_columnas = False
 
 @st.cache_data
 def cargar_datos(archivo):
@@ -126,14 +135,37 @@ def cargar_datos(archivo):
         st.error(f"Error leyendo el archivo: {e}")
         return None
 
-def obtener_info_producto(fila):
+def mostrar_columnas_excel(df):
+    """Muestra todas las columnas del Excel para diagnóstico"""
+    st.markdown("### 📋 Columnas encontradas en el archivo:")
+    
+    # Crear lista de columnas con ejemplos
+    datos_columnas = []
+    for col in df.columns:
+        col_limpio = col.strip()
+        ejemplo = df[col].dropna().iloc[0] if not df[col].dropna().empty else "N/A"
+        datos_columnas.append({
+            "Nombre Original": col,
+            "Nombre Limpio": col_limpio,
+            "Ejemplo": str(ejemplo)[:50] + "..." if len(str(ejemplo)) > 50 else str(ejemplo)
+        })
+    
+    df_columnas = pd.DataFrame(datos_columnas)
+    st.dataframe(df_columnas, use_container_width=True, hide_index=True)
+    
+    # Descargar lista de columnas
+    columnas_texto = "\n".join([f"'{col}'" for col in df.columns])
+    st.download_button(
+        "📋 Copiar nombres de columnas",
+        columnas_texto,
+        "columnas_encontradas.txt",
+        "text/plain"
+    )
+
+def obtener_info_producto(fila, df=None):
     """
-    Extrae la información específica del producto:
-    - Nombre
-    - Precio de venta
-    - Precio de venta con descuento
-    - Marca
-    - Porcentaje de descuento
+    Extrae la información específica del producto
+    Ahora busca en TODAS las columnas que contengan palabras clave
     """
     info = {
         'nombre': None,
@@ -143,70 +175,93 @@ def obtener_info_producto(fila):
         'porcentaje_descuento': None
     }
     
-    # Mapeo de posibles nombres de columnas (del español al estándar)
-    mapeo_columnas = {
-        'nombre': ['name', 'nombre', 'producto', 'product', 'descripción', 'descripcion',
-                   'Name', 'Nombre', 'Producto', 'Product', 'Descripción', 'Descripcion',
-                   'NAME', 'NOMBRE', 'PRODUCTO', 'DESCRIPCIÓN', 'DESCRIPCION'],
-        'marca': ['marca', 'brand', 'Marca', 'Brand', 'MARCA', 'BRAND'],
-        'precio_venta': ['Precio de venta', 'precio de venta', 'PRECIO DE VENTA',
-                        'Precio', 'precio', 'PRECIO', 'Precio Original', 'precio original',
-                        'Precio Normal', 'precio normal', 'Precio Lista', 'precio lista'],
-        'precio_descuento': ['Precio de venta con descuento', 'precio de venta con descuento',
-                           'PRECIO DE VENTA CON DESCUENTO', 'Precio Descuento', 'precio descuento',
-                           'PRECIO DESCUENTO', 'Precio Oferta', 'precio oferta',
-                           'Precio Final', 'precio final', 'PRECIO FINAL'],
-        'porcentaje': ['PORCENTAJE DESCUENTO', 'porcentaje descuento', 'Porcentaje Descuento',
-                      'Descuento', 'descuento', 'DESCUENTO', '% Descuento', '% descuento',
-                      'Dscto', 'dscto', 'DSCTO']
-    }
+    # Palabras clave para buscar en nombres de columnas
+    keywords_nombre = ['name', 'nombre', 'product', 'producto', 'descrip']
+    keywords_marca = ['marca', 'brand']
+    keywords_precio_original = ['precio', 'venta', 'original', 'normal', 'lista', 'base']
+    keywords_precio_descuento = ['descuento', 'oferta', 'especial', 'final', 'madrugón', 'madrugon']
+    keywords_porcentaje = ['descuento', 'dscto', 'porcentaje']
     
-    # Buscar nombre
-    for col in mapeo_columnas['nombre']:
-        if col in fila.index and pd.notna(fila[col]):
-            info['nombre'] = str(fila[col]).strip()
-            break
+    # Buscar en cada columna del DataFrame
+    for col in fila.index:
+        col_lower = col.strip().lower()
+        valor = fila[col]
+        
+        if pd.isna(valor) or str(valor).strip() == '':
+            continue
+        
+        # Buscar nombre del producto
+        if info['nombre'] is None:
+            if any(keyword in col_lower for keyword in keywords_nombre):
+                # Verificar que no sea una columna de precios
+                if not any(keyword in col_lower for keyword in ['precio', 'descuento', 'ean', 'código', 'codigo', 'supplier', 'day']):
+                    try:
+                        # Si se puede convertir a número, probablemente no es un nombre
+                        float(str(valor).replace('$', '').replace(',', ''))
+                    except:
+                        info['nombre'] = str(valor).strip()
+        
+        # Buscar marca
+        if info['marca'] is None:
+            if any(keyword in col_lower for keyword in keywords_marca):
+                info['marca'] = str(valor).strip()
+        
+        # Buscar precio original
+        if info['precio_venta'] is None:
+            if any(keyword in col_lower for keyword in keywords_precio_original):
+                if not any(keyword in col_lower for keyword in ['descuento', 'oferta', 'especial']):
+                    try:
+                        valor_limpio = str(valor).replace('$', '').replace(',', '').strip()
+                        precio = float(valor_limpio)
+                        if precio > 0:
+                            info['precio_venta'] = precio
+                    except:
+                        continue
+        
+        # Buscar precio con descuento
+        if info['precio_descuento'] is None:
+            if 'descuento' in col_lower or 'oferta' in col_lower or 'final' in col_lower or 'especial' in col_lower:
+                try:
+                    valor_limpio = str(valor).replace('$', '').replace(',', '').strip()
+                    precio = float(valor_limpio)
+                    if precio > 0:
+                        info['precio_descuento'] = precio
+                except:
+                    continue
+        
+        # Buscar porcentaje de descuento
+        if info['porcentaje_descuento'] is None:
+            if any(keyword in col_lower for keyword in keywords_porcentaje):
+                try:
+                    valor_float = float(str(valor).replace('%', '').strip())
+                    if valor_float > 0:
+                        if valor_float <= 1:
+                            info['porcentaje_descuento'] = valor_float * 100
+                        else:
+                            info['porcentaje_descuento'] = valor_float
+                except:
+                    continue
     
-    # Buscar marca
-    for col in mapeo_columnas['marca']:
-        if col in fila.index and pd.notna(fila[col]):
-            info['marca'] = str(fila[col]).strip()
-            break
-    
-    # Buscar precio de venta original
-    for col in mapeo_columnas['precio_venta']:
-        if col in fila.index and pd.notna(fila[col]):
-            try:
-                info['precio_venta'] = float(fila[col])
-                break
-            except:
+    # Si no se encontró precio con descuento específico, intentar con el que sea diferente al original
+    if info['precio_venta'] is not None and info['precio_descuento'] is None:
+        for col in fila.index:
+            col_lower = col.strip().lower()
+            valor = fila[col]
+            
+            if pd.isna(valor):
                 continue
+                
+            if 'precio' in col_lower and 'descuento' not in col_lower and 'original' not in col_lower:
+                try:
+                    valor_limpio = str(valor).replace('$', '').replace(',', '').strip()
+                    precio_temp = float(valor_limpio)
+                    if precio_temp > 0 and precio_temp != info['precio_venta']:
+                        info['precio_descuento'] = precio_temp
+                        break
+                except:
+                    continue
     
-    # Buscar precio con descuento
-    for col in mapeo_columnas['precio_descuento']:
-        if col in fila.index and pd.notna(fila[col]):
-            try:
-                info['precio_descuento'] = float(fila[col])
-                break
-            except:
-                continue
-    
-    # Buscar porcentaje de descuento
-    for col in mapeo_columnas['porcentaje']:
-        if col in fila.index and pd.notna(fila[col]):
-            try:
-                valor = float(fila[col])
-                if valor > 0:
-                    # Detectar formato decimal vs porcentaje
-                    if valor <= 1:
-                        info['porcentaje_descuento'] = valor * 100
-                    else:
-                        info['porcentaje_descuento'] = valor
-                    break
-            except:
-                continue
-    
-    # Si no hay porcentaje directo, calcularlo de los precios
+    # Calcular porcentaje si tenemos precios pero no porcentaje
     if info['porcentaje_descuento'] is None and info['precio_venta'] and info['precio_descuento']:
         if info['precio_venta'] > 0 and info['precio_descuento'] < info['precio_venta']:
             info['porcentaje_descuento'] = ((info['precio_venta'] - info['precio_descuento']) / 
@@ -214,8 +269,14 @@ def obtener_info_producto(fila):
     
     return info
 
-def mostrar_producto(info):
+def mostrar_producto(info, debug=False):
     """Muestra la información del producto de forma atractiva"""
+    
+    if debug:
+        st.markdown("---")
+        st.markdown("### 🔍 Debug: Información detectada")
+        st.json(info)
+        st.markdown("---")
     
     # Contenedor principal del descuento
     if info['porcentaje_descuento'] is not None and info['porcentaje_descuento'] > 0:
@@ -243,7 +304,6 @@ def mostrar_producto(info):
     if info['precio_venta'] is not None or info['precio_descuento'] is not None:
         st.markdown('<div class="precio-container">', unsafe_allow_html=True)
         
-        # Crear columnas para los precios
         col1, col2 = st.columns(2)
         
         with col1:
@@ -254,6 +314,13 @@ def mostrar_producto(info):
                     <div class="precio-original">${info['precio_venta']:,.0f}</div>
                 </div>
                 """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div style="text-align: center;">
+                    <div class="precio-label">Precio Original</div>
+                    <div style="color: #999;">No disponible</div>
+                </div>
+                """, unsafe_allow_html=True)
         
         with col2:
             if info['precio_descuento'] is not None:
@@ -261,6 +328,13 @@ def mostrar_producto(info):
                 <div style="text-align: center;">
                     <div class="precio-label">Precio con Descuento</div>
                     <div class="precio-descuento">${info['precio_descuento']:,.0f}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.markdown("""
+                <div style="text-align: center;">
+                    <div class="precio-label">Precio con Descuento</div>
+                    <div style="color: #999;">No disponible</div>
                 </div>
                 """, unsafe_allow_html=True)
         
@@ -324,6 +398,10 @@ with tab1:
                     </div>
                     """, unsafe_allow_html=True)
                     
+                    # Mostrar columnas encontradas
+                    with st.expander("🔍 Ver columnas del archivo"):
+                        mostrar_columnas_excel(df)
+                    
                     st.success("👉 Ve a la pestaña **'Consultar Productos'** para comenzar a buscar")
     
     else:  # Archivo del servidor
@@ -351,6 +429,9 @@ with tab1:
                             <p>📄 Archivo: {nombre_archivo}</p>
                         </div>
                         """, unsafe_allow_html=True)
+                        
+                        with st.expander("🔍 Ver columnas del archivo"):
+                            mostrar_columnas_excel(df)
                         
                         st.success("👉 Ve a la pestaña **'Consultar Productos'** para comenzar a buscar")
             else:
@@ -380,6 +461,12 @@ with tab2:
         </div>
         """, unsafe_allow_html=True)
         
+        # Opciones de debug
+        with st.expander("⚙️ Opciones avanzadas"):
+            modo_debug = st.checkbox("Modo debug (mostrar datos detectados)", value=False)
+            if st.button("📋 Mostrar todas las columnas"):
+                mostrar_columnas_excel(st.session_state.df)
+        
         # Campo de búsqueda
         st.write("### 🎯 Buscar Producto")
         
@@ -396,21 +483,14 @@ with tab2:
             # Búsqueda en múltiples columnas
             mascara = pd.Series(False, index=df.index)
             
-            if "EAN PADRE " in df.columns:
-                mascara |= (df["EAN PADRE "] == codigo)
-            
-            if "Código" in df.columns:
-                mascara |= (df["Código"] == codigo)
-            
-            # Buscar en otras columnas que contengan 'ean' o 'codigo'
+            # Buscar en TODAS las columnas que puedan contener códigos
             for col in df.columns:
-                col_lower = col.lower()
-                if ('ean' in col_lower or 'codigo' in col_lower or 'código' in col_lower):
-                    if col not in ["EAN PADRE ", "Código"]:
-                        try:
-                            mascara |= (df[col].astype(str).str.strip() == codigo)
-                        except:
-                            pass
+                col_lower = col.strip().lower()
+                if any(keyword in col_lower for keyword in ['ean', 'código', 'codigo', 'code', 'barras']):
+                    try:
+                        mascara |= (df[col].astype(str).str.strip() == codigo)
+                    except:
+                        pass
             
             resultado = df[mascara]
             
@@ -419,24 +499,21 @@ with tab2:
                 st.success("✨ ¡Producto encontrado!")
                 
                 # Extraer y mostrar solo la información necesaria
-                info_producto = obtener_info_producto(fila)
-                mostrar_producto(info_producto)
+                info_producto = obtener_info_producto(fila, df)
+                mostrar_producto(info_producto, debug=modo_debug)
+                
+                # Si hay modo debug, mostrar la fila completa
+                if modo_debug:
+                    with st.expander("🔍 Ver fila completa del Excel"):
+                        st.dataframe(pd.DataFrame([fila]), use_container_width=True)
                 
             else:
                 st.error("❌ Código no encontrado")
                 
-                # Sugerencias de códigos
+                # Sugerencias
                 with st.expander("💡 ¿Necesitas ayuda?"):
-                    st.write("**Códigos de ejemplo del archivo:**")
-                    if "EAN PADRE " in df.columns:
-                        ejemplos = df["EAN PADRE "].dropna().sample(min(5, len(df))).tolist()
-                    elif "Código" in df.columns:
-                        ejemplos = df["Código"].dropna().sample(min(5, len(df))).tolist()
-                    else:
-                        ejemplos = []
-                    
-                    for ej in ejemplos:
-                        st.code(ej)
+                    st.write("**Primeros 5 registros del archivo:**")
+                    st.dataframe(df.head(5), use_container_width=True)
         
         # Botón para cambiar de archivo
         if st.button("🔄 Cargar otro archivo", use_container_width=True):
