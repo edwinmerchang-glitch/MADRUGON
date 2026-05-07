@@ -3,6 +3,7 @@ import pandas as pd
 import sqlite3
 import os
 from datetime import datetime
+import io
 
 # Configurar la pagina
 st.set_page_config(
@@ -30,27 +31,70 @@ def init_database():
     conn.commit()
     conn.close()
 
-# Cargar datos desde Excel a SQLite
-def cargar_excel_a_sqlite(archivo_excel, hoja="8"):
+# Cargar datos desde archivo (Excel o CSV)
+def cargar_datos_a_sqlite(archivo, tipo='excel', hoja="8"):
     try:
-        # Leer Excel
-        df = pd.read_excel(archivo_excel, sheet_name=hoja, engine='openpyxl')
+        if tipo == 'excel':
+            # Intentar leer Excel sin openpyxl (usar xlrd para .xls)
+            try:
+                df = pd.read_excel(archivo, sheet_name=hoja)
+            except:
+                # Si falla, intentar con diferentes motores
+                try:
+                    df = pd.read_excel(archivo, sheet_name=hoja, engine='xlrd')
+                except:
+                    st.error("No se pudo leer el Excel. Por favor, guarda el archivo como CSV y usalo en su lugar.")
+                    return False, "Error leyendo Excel"
+        else:  # CSV
+            df = pd.read_csv(archivo)
         
         # Limpiar columnas
         df.columns = df.columns.str.strip()
         
-        # Renombrar columnas para estandarizar
+        # Identificar columnas (buscar nombres similares)
+        col_codigo = None
+        col_marca = None
+        col_descuento = None
+        col_precio_final = None
+        col_precio_original = None
+        
+        for col in df.columns:
+            col_lower = col.lower().strip()
+            if 'codigo' in col_lower or 'código' in col_lower or 'cod' in col_lower:
+                col_codigo = col
+            elif 'marca' in col_lower:
+                col_marca = col
+            elif 'descuento' in col_lower or '%' in col:
+                col_descuento = col
+            elif 'final' in col_lower or 'con descuento' in col_lower:
+                col_precio_final = col
+            elif 'original' in col_lower or 'venta' in col_lower:
+                col_precio_original = col
+        
+        # Usar las columnas encontradas o las originales
         df.rename(columns={
-            'Código': 'codigo',
-            'Marca': 'marca',
-            '% Descuento': 'descuento',
-            'Precio de venta con descuento': 'precio_final',
-            'Precio de venta': 'precio_original'
+            col_codigo: 'codigo' if col_codigo else 'Código',
+            col_marca: 'marca' if col_marca else 'Marca',
+            col_descuento: 'descuento' if col_descuento else '% Descuento',
+            col_precio_final: 'precio_final' if col_precio_final else 'Precio de venta con descuento',
+            col_precio_original: 'precio_original' if col_precio_original else 'Precio de venta'
         }, inplace=True)
+        
+        # Tomar solo las columnas necesarias
+        columnas_necesarias = ['codigo', 'marca', 'descuento', 'precio_final', 'precio_original']
+        columnas_existentes = [col for col in columnas_necesarias if col in df.columns]
+        
+        if not columnas_existentes:
+            return False, "No se encontraron las columnas necesarias"
+        
+        df = df[columnas_existentes]
         
         # Limpiar datos
         df['codigo'] = df['codigo'].astype(str).str.strip()
         df['marca'] = df['marca'].astype(str).str.strip()
+        df['descuento'] = pd.to_numeric(df['descuento'], errors='coerce').fillna(0)
+        df['precio_final'] = pd.to_numeric(df['precio_final'], errors='coerce').fillna(0)
+        df['precio_original'] = pd.to_numeric(df['precio_original'], errors='coerce').fillna(0)
         
         # Conectar a SQLite
         conn = sqlite3.connect('productos.db')
@@ -67,9 +111,9 @@ def cargar_excel_a_sqlite(archivo_excel, hoja="8"):
             """, (
                 row['codigo'],
                 row['marca'],
-                float(row['descuento']) if pd.notna(row['descuento']) else 0,
-                float(row['precio_final']) if pd.notna(row['precio_final']) else 0,
-                float(row['precio_original']) if pd.notna(row['precio_original']) else 0,
+                float(row['descuento']),
+                float(row['precio_final']),
+                float(row['precio_original']),
                 datetime.now()
             ))
         
@@ -126,22 +170,42 @@ st.write("Escanea o escribe el codigo de barras para ver el descuento")
 with st.sidebar:
     st.header("📋 Configuracion")
     
-    # Opcion para cargar Excel
+    # Opcion para elegir tipo de archivo
     st.subheader("1. Cargar datos")
-    archivo_excel = st.file_uploader(
-        "Cargar archivo Excel",
-        type=['xlsx', 'xls'],
-        help="Sube el archivo Excel con los productos"
+    tipo_archivo = st.radio(
+        "Tipo de archivo:",
+        ["Excel (.xls)", "CSV (Recomendado)"],
+        help="CSV es mas compatible y no necesita librerias adicionales"
     )
     
-    if archivo_excel:
+    # Subir archivo
+    if tipo_archivo == "CSV (Recomendado)":
+        archivo = st.file_uploader(
+            "Cargar archivo CSV",
+            type=['csv'],
+            help="Guarda tu Excel como CSV (Archivo > Guardar como > CSV)"
+        )
+    else:
+        archivo = st.file_uploader(
+            "Cargar archivo Excel",
+            type=['xls', 'xlsx'],
+            help="Para archivos .xlsx necesitas instalar openpyxl"
+        )
+    
+    if archivo:
         with st.spinner("Cargando datos a la base de datos..."):
-            success, result = cargar_excel_a_sqlite(archivo_excel)
+            if tipo_archivo == "CSV (Recomendado)":
+                success, result = cargar_datos_a_sqlite(archivo, tipo='csv')
+            else:
+                success, result = cargar_datos_a_sqlite(archivo, tipo='excel')
+            
             if success:
                 st.success(f"✅ Datos cargados! {result} productos en la base de datos")
                 st.balloons()
             else:
                 st.error(f"❌ Error: {result}")
+                if "openpyxl" in str(result):
+                    st.info("💡 Consejo: Guarda tu archivo Excel como CSV y sube ese archivo en su lugar.")
     
     # Mostrar estadisticas
     st.divider()
@@ -149,7 +213,7 @@ with st.sidebar:
     
     total_productos, promedio_desc = get_estadisticas()
     st.metric("Total de productos", total_productos)
-    if promedio_desc:
+    if promedio_desc and promedio_desc > 0:
         st.metric("Descuento promedio", f"{promedio_desc:.1f}%")
     
     # Opciones
@@ -179,9 +243,7 @@ with col2:
     buscar_click = st.button("🔎 Buscar producto", use_container_width=True)
 
 # Realizar busqueda
-if codigo and (buscar_click or codigo != st.session_state.get('last_codigo', '')):
-    st.session_state['last_codigo'] = codigo
-    
+if codigo and buscar_click:
     with st.spinner("Buscando..."):
         producto = buscar_producto(codigo)
     
@@ -204,7 +266,7 @@ if codigo and (buscar_click or codigo != st.session_state.get('last_codigo', '')
             if producto['precio_original'] > 0:
                 st.metric("💰 Precio Original", f"${producto['precio_original']:,.0f}")
             else:
-                st.metric("💰 Precio Original", "No disponible")
+                st.metric("💰 Precio Original", "-")
             
             if producto['precio_final'] > 0:
                 ahorro = producto['precio_original'] - producto['precio_final']
@@ -214,23 +276,13 @@ if codigo and (buscar_click or codigo != st.session_state.get('last_codigo', '')
                 else:
                     st.metric("💵 Precio Final", f"${producto['precio_final']:,.0f}")
             else:
-                st.metric("💵 Precio Final", "No disponible")
-        
-        # Mostrar codigo
-        st.caption(f"📌 Codigo: `{producto['codigo']}`")
-        
+                st.metric("💵 Precio Final", "-")
     else:
         st.error("❌ Producto no encontrado")
-        st.info("""
-        **Sugerencias:**
-        - Verifica que el codigo sea correcto
-        - Asegurate de haber cargado los datos del Excel
-        - Prueba con otro codigo
-        """)
 
-# Mostrar ultimos productos (opcional)
+# Mostrar productos cargados
 st.markdown("---")
-with st.expander("📋 Ver ultimos productos cargados"):
+with st.expander("📋 Ver productos en la base de datos"):
     conn = sqlite3.connect('productos.db')
     df_preview = pd.read_sql_query(
         "SELECT codigo, marca, descuento, precio_final FROM productos LIMIT 20", 
@@ -241,8 +293,26 @@ with st.expander("📋 Ver ultimos productos cargados"):
     if not df_preview.empty:
         st.dataframe(df_preview, use_container_width=True)
     else:
-        st.info("No hay productos cargados. Por favor, carga un archivo Excel.")
+        st.info("No hay productos cargados. Por favor, carga un archivo.")
+
+# Instrucciones
+with st.expander("📖 Instrucciones para usar CSV (Recomendado)"):
+    st.markdown("""
+    ### Como convertir Excel a CSV:
+    
+    1. **Abre tu archivo Excel**
+    2. **Ve a Archivo > Guardar como**
+    3. **Elige "CSV UTF-8 (Comma delimited)"** 
+    4. **Guarda el archivo**
+    5. **Sube el archivo CSV a esta app**
+    
+    ### Ventajas del CSV:
+    - ✅ No necesita librerias adicionales
+    - ✅ Funciona perfectamente en Streamlit Cloud
+    - ✅ Es mas rapido de procesar
+    - ✅ Compatible con todos los sistemas
+    """)
 
 # Footer
 st.markdown("---")
-st.caption("Scanner de Descuentos v1.0 - Powered by SQLite | Escanea y ahorra")
+st.caption("Scanner de Descuentos v1.0 - Usa CSV para mejor compatibilidad")
