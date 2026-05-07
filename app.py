@@ -1,6 +1,6 @@
 import streamlit as st
 
-ARCHIVO_EXCEL = r"C:\Users\TU_USUARIO\Documents\MADRUGON MAYO 2026 PUNTO DE VENTA.xlsx"
+ARCHIVO_EXCEL = r"C:\Users\edwin\Downloads\MADRUGON MAYO 2026 PUNTO DE VENTA.xlsx"
 HOJA = "8"
 
 # CARGAR EXCEL
