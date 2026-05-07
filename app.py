@@ -1,26 +1,8 @@
 import streamlit as st
 import pandas as pd
-import subprocess
-import sys
+import sqlite3
 import os
-
-# Verificar e instalar openpyxl automaticamente
-def verificar_instalar_openpyxl():
-    try:
-        import openpyxl
-        return True
-    except ImportError:
-        st.warning("Instalando openpyxl automaticamente...")
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", "openpyxl"])
-            st.success("openpyxl instalado. Por favor, reinicia la aplicacion.")
-            st.stop()
-        except:
-            st.error("No se pudo instalar openpyxl automaticamente. Por favor, instalalo manualmente con: pip install openpyxl")
-            st.stop()
-
-# Verificar openpyxl primero
-verificar_instalar_openpyxl()
+from datetime import datetime
 
 # Configurar la pagina
 st.set_page_config(
@@ -29,220 +11,238 @@ st.set_page_config(
     page_icon="🛒"
 )
 
-# Titulo de la app
-st.title("Scanner de Descuentos")
+# Inicializar base de datos SQLite
+def init_database():
+    conn = sqlite3.connect('productos.db')
+    c = conn.cursor()
+    
+    # Crear tabla si no existe
+    c.execute('''CREATE TABLE IF NOT EXISTS productos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        codigo TEXT UNIQUE,
+        marca TEXT,
+        descuento REAL,
+        precio_final REAL,
+        precio_original REAL,
+        fecha_actualizacion TIMESTAMP
+    )''')
+    
+    conn.commit()
+    conn.close()
+
+# Cargar datos desde Excel a SQLite
+def cargar_excel_a_sqlite(archivo_excel, hoja="8"):
+    try:
+        # Leer Excel
+        df = pd.read_excel(archivo_excel, sheet_name=hoja, engine='openpyxl')
+        
+        # Limpiar columnas
+        df.columns = df.columns.str.strip()
+        
+        # Renombrar columnas para estandarizar
+        df.rename(columns={
+            'Código': 'codigo',
+            'Marca': 'marca',
+            '% Descuento': 'descuento',
+            'Precio de venta con descuento': 'precio_final',
+            'Precio de venta': 'precio_original'
+        }, inplace=True)
+        
+        # Limpiar datos
+        df['codigo'] = df['codigo'].astype(str).str.strip()
+        df['marca'] = df['marca'].astype(str).str.strip()
+        
+        # Conectar a SQLite
+        conn = sqlite3.connect('productos.db')
+        
+        # Limpiar tabla existente
+        conn.execute("DELETE FROM productos")
+        
+        # Insertar datos
+        for _, row in df.iterrows():
+            conn.execute("""
+                INSERT OR REPLACE INTO productos 
+                (codigo, marca, descuento, precio_final, precio_original, fecha_actualizacion)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                row['codigo'],
+                row['marca'],
+                float(row['descuento']) if pd.notna(row['descuento']) else 0,
+                float(row['precio_final']) if pd.notna(row['precio_final']) else 0,
+                float(row['precio_original']) if pd.notna(row['precio_original']) else 0,
+                datetime.now()
+            ))
+        
+        conn.commit()
+        conn.close()
+        
+        return True, len(df)
+    except Exception as e:
+        return False, str(e)
+
+# Buscar producto en SQLite
+def buscar_producto(codigo):
+    conn = sqlite3.connect('productos.db')
+    c = conn.cursor()
+    
+    c.execute("SELECT * FROM productos WHERE codigo = ?", (codigo.strip(),))
+    resultado = c.fetchone()
+    
+    conn.close()
+    
+    if resultado:
+        return {
+            'codigo': resultado[1],
+            'marca': resultado[2],
+            'descuento': resultado[3],
+            'precio_final': resultado[4],
+            'precio_original': resultado[5]
+        }
+    return None
+
+# Obtener estadisticas
+def get_estadisticas():
+    conn = sqlite3.connect('productos.db')
+    c = conn.cursor()
+    
+    c.execute("SELECT COUNT(*) FROM productos")
+    total = c.fetchone()[0]
+    
+    c.execute("SELECT AVG(descuento) FROM productos WHERE descuento > 0")
+    promedio_desc = c.fetchone()[0]
+    
+    conn.close()
+    
+    return total, promedio_desc
+
+# Inicializar base de datos
+init_database()
+
+# Interfaz principal
+st.title("🛒 Scanner de Descuentos")
 st.write("Escanea o escribe el codigo de barras para ver el descuento")
 
-# Sidebar con informacion
+# Sidebar
 with st.sidebar:
-    st.header("Instrucciones")
-    st.markdown("""
-    1. Carga el archivo Excel
-    2. Escanea o escribe el codigo
-    3. Mira el descuento aplicado
+    st.header("📋 Configuracion")
     
-    **Formato requerido del Excel:**
-    - Hoja llamada: **8**
-    - Columnas necesarias:
-    - `Codigo`
-    - `Marca`
-    - `% Descuento`
-    - `Precio de venta con descuento`
-    - `Precio de venta`
-    """)
-    
-    st.divider()
-    
-    # Opcion para usar archivo local (alternativa)
-    usar_archivo_local = st.checkbox("Usar archivo local desde mi PC")
-    
-    if usar_archivo_local:
-        ruta_local = st.text_input(
-            "Ruta del archivo",
-            placeholder="Ej: C:/Users/edwin/Downloads/archivo.xlsx"
-        )
-
-# Subir archivo Excel (principal)
-if not usar_archivo_local:
-    archivo_subido = st.file_uploader(
-        "Cargar archivo Excel", 
+    # Opcion para cargar Excel
+    st.subheader("1. Cargar datos")
+    archivo_excel = st.file_uploader(
+        "Cargar archivo Excel",
         type=['xlsx', 'xls'],
-        help="Sube el archivo Excel con los productos",
-        key="file_uploader"
+        help="Sube el archivo Excel con los productos"
     )
     
-    if archivo_subido is not None:
-        try:
-            HOJA = "8"
+    if archivo_excel:
+        with st.spinner("Cargando datos a la base de datos..."):
+            success, result = cargar_excel_a_sqlite(archivo_excel)
+            if success:
+                st.success(f"✅ Datos cargados! {result} productos en la base de datos")
+                st.balloons()
+            else:
+                st.error(f"❌ Error: {result}")
+    
+    # Mostrar estadisticas
+    st.divider()
+    st.subheader("📊 Estadisticas")
+    
+    total_productos, promedio_desc = get_estadisticas()
+    st.metric("Total de productos", total_productos)
+    if promedio_desc:
+        st.metric("Descuento promedio", f"{promedio_desc:.1f}%")
+    
+    # Opciones
+    st.divider()
+    if st.button("🗑️ Limpiar base de datos"):
+        conn = sqlite3.connect('productos.db')
+        conn.execute("DELETE FROM productos")
+        conn.commit()
+        conn.close()
+        st.success("Base de datos limpiada!")
+        st.rerun()
+
+# Area principal de busqueda
+st.markdown("---")
+
+# Busqueda por codigo
+codigo = st.text_input(
+    "🔍 Codigo de barras",
+    placeholder="Ej: 1234567890",
+    help="Escanea o escribe el codigo de barras del producto",
+    key="codigo_input"
+)
+
+# Boton de busqueda
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    buscar_click = st.button("🔎 Buscar producto", use_container_width=True)
+
+# Realizar busqueda
+if codigo and (buscar_click or codigo != st.session_state.get('last_codigo', '')):
+    st.session_state['last_codigo'] = codigo
+    
+    with st.spinner("Buscando..."):
+        producto = buscar_producto(codigo)
+    
+    if producto:
+        st.success("✅ Producto encontrado!")
+        
+        # Mostrar informacion del producto
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric("🏷️ Marca", producto['marca'])
+            if producto['descuento'] > 0:
+                st.metric("🔻 Descuento", f"{producto['descuento']:.0f}%", 
+                         delta=f"-{producto['descuento']:.0f}%", 
+                         delta_color="inverse")
+            else:
+                st.metric("🔻 Descuento", "0%")
+        
+        with col2:
+            if producto['precio_original'] > 0:
+                st.metric("💰 Precio Original", f"${producto['precio_original']:,.0f}")
+            else:
+                st.metric("💰 Precio Original", "No disponible")
             
-            # Mostrar spinner mientras carga
-            with st.spinner("Cargando archivo..."):
-                # Cargar el archivo subido
-                df = pd.read_excel(archivo_subido, sheet_name=HOJA, engine='openpyxl')
-            
-            # Limpiar columnas
-            df.columns = df.columns.str.strip()
-            
-            # Convertir codigo a texto
-            df['Código'] = df['Código'].astype(str).str.strip()
-            
-            # Mostrar informacion del archivo
-            st.success("Archivo cargado correctamente")
-            st.info(f"Total de productos: {len(df)}")
-            
-            # INPUT CODIGO
-            st.markdown("---")
-            codigo = st.text_input(
-                "Codigo de barras", 
-                placeholder="Ej: 1234567890",
-                help="Escribe o escanea el codigo de barras del producto"
-            )
-            
-            # Boton para buscar (opcional)
-            buscar = st.button("Buscar producto", use_container_width=True)
-            
-            # Busqueda (con Enter o con boton)
-            if codigo and buscar:
-                resultado = df[df['Código'] == codigo.strip()]
-                
-                if not resultado.empty:
-                    producto = resultado.iloc[0]
-                    
-                    # Obtener valores con manejo de errores
-                    marca = producto.get('Marca', 'No disponible')
-                    descuento = producto.get('% Descuento', producto.get('Porcentaje Descuento', 0))
-                    precio_final = producto.get('Precio de venta con descuento', 0)
-                    precio_original = producto.get('Precio de venta', producto.get('Precio de venta ', 0))
-                    
-                    st.balloons()
-                    st.success("Producto encontrado!")
-                    
-                    # Mostrar tarjeta del producto
-                    with st.container():
-                        st.markdown("### Informacion del producto")
-                        
-                        col1, col2 = st.columns(2)
-                        
-                        with col1:
-                            st.metric("Marca", str(marca))
-                            if descuento and float(descuento) > 0:
-                                st.metric("Descuento", f"{descuento}%", delta=f"-{descuento}%", delta_color="inverse")
-                            else:
-                                st.metric("Descuento", "0%")
-                        
-                        with col2:
-                            if pd.notna(precio_original) and precio_original != 0:
-                                st.metric("Precio Original", f"${precio_original:,.0f}")
-                            else:
-                                st.metric("Precio Original", "No disponible")
-                            
-                            if pd.notna(precio_final) and precio_final != 0:
-                                ahorro = precio_original - precio_final if pd.notna(precio_original) else 0
-                                if ahorro > 0:
-                                    st.metric("Precio Final", f"${precio_final:,.0f}", delta=f"Ahorro: ${ahorro:,.0f}")
-                                else:
-                                    st.metric("Precio Final", f"${precio_final:,.0f}")
-                            else:
-                                st.metric("Precio Final", "No disponible")
-                    
-                    # Mostrar codigo encontrado
-                    st.caption(f"Codigo escaneado: `{codigo}`")
-                    
+            if producto['precio_final'] > 0:
+                ahorro = producto['precio_original'] - producto['precio_final']
+                if ahorro > 0:
+                    st.metric("💵 Precio Final", f"${producto['precio_final']:,.0f}", 
+                             delta=f"Ahorro: ${ahorro:,.0f}")
                 else:
-                    st.error("Codigo no encontrado")
-                    
-                    # Sugerir codigos similares
-                    if len(codigo) >= 3:
-                        codigos_similares = df[df['Código'].str.contains(codigo[:3], na=False)].head(5)
-                        if not codigos_similares.empty:
-                            st.info("Buscabas alguno de estos codigos?")
-                            for idx, row in codigos_similares.iterrows():
-                                st.code(f"{row['Código']} - {row.get('Marca', 'Sin marca')}")
-            
-            # Mostrar vista previa (opcional)
-            with st.expander("Ver vista previa de productos"):
-                st.dataframe(
-                    df[['Código', 'Marca', '% Descuento', 'Precio de venta con descuento']].head(10),
-                    use_container_width=True
-                )
-                
-        except Exception as e:
-            st.error(f"Error: {e}")
-            st.info("""
-            Posibles soluciones:
-            1. Verifica que el archivo no este corrupto
-            2. Asegurate de que la hoja se llame exactamente '8'
-            3. Confirma que el archivo tenga las columnas necesarias
-            4. Revisa que los datos esten en el formato correcto
-            """)
+                    st.metric("💵 Precio Final", f"${producto['precio_final']:,.0f}")
+            else:
+                st.metric("💵 Precio Final", "No disponible")
+        
+        # Mostrar codigo
+        st.caption(f"📌 Codigo: `{producto['codigo']}`")
+        
     else:
-        st.info("Por favor, carga un archivo Excel para comenzar")
-        st.markdown("""
-        ### Como usar la app:
-        1. Haz clic en 'Browse files'
-        2. Selecciona tu archivo Excel (debe tener una hoja llamada '8')
-        3. Espera a que se cargue
-        4. Escanea o escribe el codigo de barras
-        5. Mira el descuento aplicado
+        st.error("❌ Producto no encontrado")
+        st.info("""
+        **Sugerencias:**
+        - Verifica que el codigo sea correcto
+        - Asegurate de haber cargado los datos del Excel
+        - Prueba con otro codigo
         """)
 
-# Opcion de archivo local
-else:
-    if ruta_local and os.path.exists(ruta_local):
-        try:
-            HOJA = "8"
-            
-            with st.spinner("Cargando archivo local..."):
-                df = pd.read_excel(ruta_local, sheet_name=HOJA, engine='openpyxl')
-            
-            df.columns = df.columns.str.strip()
-            df['Código'] = df['Código'].astype(str).str.strip()
-            
-            st.success(f"Archivo local cargado: {os.path.basename(ruta_local)}")
-            st.info(f"Total de productos: {len(df)}")
-            
-            # INPUT CODIGO
-            st.markdown("---")
-            codigo = st.text_input("Codigo de barras", placeholder="Ej: 1234567890")
-            
-            if codigo:
-                resultado = df[df['Código'] == codigo.strip()]
-                
-                if not resultado.empty:
-                    producto = resultado.iloc[0]
-                    
-                    marca = producto.get('Marca', 'No disponible')
-                    descuento = producto.get('% Descuento', producto.get('Porcentaje Descuento', 0))
-                    precio_final = producto.get('Precio de venta con descuento', 0)
-                    precio_original = producto.get('Precio de venta', producto.get('Precio de venta ', 0))
-                    
-                    st.balloons()
-                    st.success("Producto encontrado!")
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.metric("Marca", str(marca))
-                        st.metric("Descuento", f"{descuento}%")
-                    
-                    with col2:
-                        if pd.notna(precio_original) and precio_original != 0:
-                            st.metric("Precio Original", f"${precio_original:,.0f}")
-                        else:
-                            st.metric("Precio Original", "No disponible")
-                        
-                        if pd.notna(precio_final) and precio_final != 0:
-                            st.metric("Precio Final", f"${precio_final:,.0f}")
-                        else:
-                            st.metric("Precio Final", "No disponible")
-                else:
-                    st.error("Codigo no encontrado")
-                    
-        except Exception as e:
-            st.error(f"Error: {e}")
-    elif usar_archivo_local:
-        st.warning("Por favor, ingresa una ruta valida al archivo Excel")
+# Mostrar ultimos productos (opcional)
+st.markdown("---")
+with st.expander("📋 Ver ultimos productos cargados"):
+    conn = sqlite3.connect('productos.db')
+    df_preview = pd.read_sql_query(
+        "SELECT codigo, marca, descuento, precio_final FROM productos LIMIT 20", 
+        conn
+    )
+    conn.close()
+    
+    if not df_preview.empty:
+        st.dataframe(df_preview, use_container_width=True)
+    else:
+        st.info("No hay productos cargados. Por favor, carga un archivo Excel.")
 
 # Footer
 st.markdown("---")
-st.caption("Scanner de Descuentos v1.0 - Escanea y ahorra")
+st.caption("Scanner de Descuentos v1.0 - Powered by SQLite | Escanea y ahorra")
