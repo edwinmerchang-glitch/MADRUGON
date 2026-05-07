@@ -5,12 +5,29 @@ import os
 st.set_page_config(
     page_title="Consulta de Descuentos",
     page_icon="🛒",
-    layout="centered"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# CSS personalizado para resaltar el descuento
+# ============ CSS PERSONALIZADO ============
 st.markdown("""
 <style>
+    /* Estilos globales */
+    .main {
+        padding: 0rem 1rem;
+    }
+    
+    /* Sidebar personalizado */
+    .css-1d391kg, .css-1lcbmhc {
+        background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+    }
+    
+    .sidebar .sidebar-content {
+        background: transparent;
+        color: white;
+    }
+    
+    /* Contenedor de descuento */
     .descuento-container {
         background: linear-gradient(135deg, #FF416C, #FF4B2B);
         color: white;
@@ -26,11 +43,20 @@ st.markdown("""
         line-height: 1;
         margin: 10px 0;
         text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        animation: pulse 2s infinite;
     }
     .texto-descuento {
         font-size: 24px;
         font-weight: 600;
     }
+    
+    @keyframes pulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+        100% { transform: scale(1); }
+    }
+    
+    /* Tarjeta de producto */
     .producto-card {
         background: white;
         border-radius: 15px;
@@ -39,7 +65,7 @@ st.markdown("""
         margin: 20px 0;
     }
     .producto-nombre {
-        font-size: 28px;
+        font-size: 24px;
         font-weight: 700;
         color: #1a1a1a;
         margin-bottom: 20px;
@@ -55,118 +81,117 @@ st.markdown("""
         border-radius: 20px;
         display: inline-block;
     }
+    
+    /* Precios */
     .precio-container {
-        display: flex;
-        justify-content: center;
-        gap: 20px;
+        background: #f8f9fa;
+        border-radius: 15px;
+        padding: 20px;
         margin-top: 20px;
     }
     .precio-original {
         text-decoration: line-through;
         color: #999;
         font-size: 20px;
-        text-align: center;
     }
     .precio-descuento {
         color: #FF416C;
         font-size: 32px;
         font-weight: 700;
-        text-align: center;
     }
     .precio-label {
         font-size: 14px;
         color: #666;
         margin-bottom: 5px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
     }
-    .stats-container {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    
+    /* Ahorro */
+    .ahorro-badge {
+        display: inline-block;
+        background: #4CAF50;
         color: white;
-        padding: 20px;
+        padding: 8px 20px;
+        border-radius: 25px;
+        font-weight: 600;
+        margin-top: 10px;
+    }
+    
+    /* Estado del archivo */
+    .status-card {
+        background: white;
+        border-radius: 10px;
+        padding: 15px;
+        margin: 10px 0;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+    .status-title {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        color: #999;
+    }
+    .status-value {
+        font-size: 20px;
+        font-weight: 700;
+        color: #1a1a1a;
+    }
+    
+    /* Input de búsqueda personalizado */
+    .search-container {
+        background: white;
         border-radius: 15px;
+        padding: 20px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
         margin: 20px 0;
     }
-    .upload-area {
-        border: 3px dashed #FF416C;
-        border-radius: 20px;
-        padding: 50px;
-        text-align: center;
-        background: #fafafa;
-    }
-    .debug-box {
-        background: #fff3cd;
-        border: 1px solid #ffc107;
-        padding: 10px;
-        border-radius: 5px;
-        margin: 10px 0;
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+        .porcentaje-descuento {
+            font-size: 60px;
+        }
+        .producto-nombre {
+            font-size: 20px;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Inicializar estado de la sesión
+# ============ INICIALIZAR ESTADO ============
 if 'datos_cargados' not in st.session_state:
     st.session_state.datos_cargados = False
 if 'df' not in st.session_state:
     st.session_state.df = None
 if 'nombre_archivo' not in st.session_state:
     st.session_state.nombre_archivo = ""
-if 'mostrar_columnas' not in st.session_state:
-    st.session_state.mostrar_columnas = False
+if 'total_productos' not in st.session_state:
+    st.session_state.total_productos = 0
+if 'modo_debug' not in st.session_state:
+    st.session_state.modo_debug = False
+
+# ============ FUNCIONES ============
 
 @st.cache_data
 def cargar_datos(archivo):
+    """Carga y procesa el archivo Excel"""
     try:
-        df = pd.read_excel(
-            archivo,
-            sheet_name="8"
-        )
+        df = pd.read_excel(archivo, sheet_name="8")
         
         # Convertir columnas de código a string
-        columnas_codigo = [
-            "EAN PADRE ",
-            "Código"
-        ]
-        
-        for col in columnas_codigo:
-            if col in df.columns:
-                df[col] = df[col].astype(str)
+        for col in df.columns:
+            col_lower = col.strip().lower()
+            if any(keyword in col_lower for keyword in ['ean', 'código', 'codigo', 'code']):
+                df[col] = df[col].astype(str).str.strip()
         
         return df
     except Exception as e:
-        st.error(f"Error leyendo el archivo: {e}")
+        st.error(f"Error al leer el archivo: {e}")
         return None
 
-def mostrar_columnas_excel(df):
-    """Muestra todas las columnas del Excel para diagnóstico"""
-    st.markdown("### 📋 Columnas encontradas en el archivo:")
-    
-    # Crear lista de columnas con ejemplos
-    datos_columnas = []
-    for col in df.columns:
-        col_limpio = col.strip()
-        ejemplo = df[col].dropna().iloc[0] if not df[col].dropna().empty else "N/A"
-        datos_columnas.append({
-            "Nombre Original": col,
-            "Nombre Limpio": col_limpio,
-            "Ejemplo": str(ejemplo)[:50] + "..." if len(str(ejemplo)) > 50 else str(ejemplo)
-        })
-    
-    df_columnas = pd.DataFrame(datos_columnas)
-    st.dataframe(df_columnas, use_container_width=True, hide_index=True)
-    
-    # Descargar lista de columnas
-    columnas_texto = "\n".join([f"'{col}'" for col in df.columns])
-    st.download_button(
-        "📋 Copiar nombres de columnas",
-        columnas_texto,
-        "columnas_encontradas.txt",
-        "text/plain"
-    )
-
-def obtener_info_producto(fila, df=None):
-    """
-    Extrae la información específica del producto
-    Ahora busca en TODAS las columnas que contengan palabras clave
-    """
+def obtener_info_producto(fila):
+    """Extrae información relevante del producto"""
     info = {
         'nombre': None,
         'precio_venta': None,
@@ -175,14 +200,6 @@ def obtener_info_producto(fila, df=None):
         'porcentaje_descuento': None
     }
     
-    # Palabras clave para buscar en nombres de columnas
-    keywords_nombre = ['name', 'nombre', 'product', 'producto', 'descrip']
-    keywords_marca = ['marca', 'brand']
-    keywords_precio_original = ['precio', 'venta', 'original', 'normal', 'lista', 'base']
-    keywords_precio_descuento = ['descuento', 'oferta', 'especial', 'final', 'madrugón', 'madrugon']
-    keywords_porcentaje = ['descuento', 'dscto', 'porcentaje']
-    
-    # Buscar en cada columna del DataFrame
     for col in fila.index:
         col_lower = col.strip().lower()
         valor = fila[col]
@@ -190,96 +207,64 @@ def obtener_info_producto(fila, df=None):
         if pd.isna(valor) or str(valor).strip() == '':
             continue
         
-        # Buscar nombre del producto
+        # Detectar nombre del producto
         if info['nombre'] is None:
-            if any(keyword in col_lower for keyword in keywords_nombre):
-                # Verificar que no sea una columna de precios
-                if not any(keyword in col_lower for keyword in ['precio', 'descuento', 'ean', 'código', 'codigo', 'supplier', 'day']):
-                    try:
-                        # Si se puede convertir a número, probablemente no es un nombre
-                        float(str(valor).replace('$', '').replace(',', ''))
-                    except:
-                        info['nombre'] = str(valor).strip()
+            if any(kw in col_lower for kw in ['name', 'nombre', 'product', 'descrip']) and \
+               not any(kw in col_lower for kw in ['precio', 'descuento', 'ean', 'codigo', 'supplier', 'day', 'linea']):
+                try:
+                    float(str(valor).replace('$', '').replace(',', ''))
+                except:
+                    info['nombre'] = str(valor).strip()
         
-        # Buscar marca
+        # Detectar marca
         if info['marca'] is None:
-            if any(keyword in col_lower for keyword in keywords_marca):
+            if any(kw in col_lower for kw in ['marca', 'brand']):
                 info['marca'] = str(valor).strip()
         
-        # Buscar precio original
+        # Detectar precio original
         if info['precio_venta'] is None:
-            if any(keyword in col_lower for keyword in keywords_precio_original):
-                if not any(keyword in col_lower for keyword in ['descuento', 'oferta', 'especial']):
-                    try:
-                        valor_limpio = str(valor).replace('$', '').replace(',', '').strip()
-                        precio = float(valor_limpio)
-                        if precio > 0:
-                            info['precio_venta'] = precio
-                    except:
-                        continue
-        
-        # Buscar precio con descuento
-        if info['precio_descuento'] is None:
-            if 'descuento' in col_lower or 'oferta' in col_lower or 'final' in col_lower or 'especial' in col_lower:
+            if 'precio' in col_lower and 'descuento' not in col_lower:
                 try:
-                    valor_limpio = str(valor).replace('$', '').replace(',', '').strip()
-                    precio = float(valor_limpio)
+                    precio = float(str(valor).replace('$', '').replace(',', '').strip())
+                    if precio > 0:
+                        info['precio_venta'] = precio
+                except:
+                    continue
+        
+        # Detectar precio con descuento
+        if info['precio_descuento'] is None:
+            if 'descuento' in col_lower or 'final' in col_lower:
+                try:
+                    precio = float(str(valor).replace('$', '').replace(',', '').strip())
                     if precio > 0:
                         info['precio_descuento'] = precio
                 except:
                     continue
         
-        # Buscar porcentaje de descuento
+        # Detectar porcentaje
         if info['porcentaje_descuento'] is None:
-            if any(keyword in col_lower for keyword in keywords_porcentaje):
+            if any(kw in col_lower for kw in ['descuento', 'dscto', 'porcentaje']) and \
+               not any(kw in col_lower for kw in ['precio', 'venta']):
                 try:
                     valor_float = float(str(valor).replace('%', '').strip())
                     if valor_float > 0:
-                        if valor_float <= 1:
-                            info['porcentaje_descuento'] = valor_float * 100
-                        else:
-                            info['porcentaje_descuento'] = valor_float
+                        info['porcentaje_descuento'] = valor_float * 100 if valor_float <= 1 else valor_float
                 except:
                     continue
     
-    # Si no se encontró precio con descuento específico, intentar con el que sea diferente al original
-    if info['precio_venta'] is not None and info['precio_descuento'] is None:
-        for col in fila.index:
-            col_lower = col.strip().lower()
-            valor = fila[col]
-            
-            if pd.isna(valor):
-                continue
-                
-            if 'precio' in col_lower and 'descuento' not in col_lower and 'original' not in col_lower:
-                try:
-                    valor_limpio = str(valor).replace('$', '').replace(',', '').strip()
-                    precio_temp = float(valor_limpio)
-                    if precio_temp > 0 and precio_temp != info['precio_venta']:
-                        info['precio_descuento'] = precio_temp
-                        break
-                except:
-                    continue
-    
-    # Calcular porcentaje si tenemos precios pero no porcentaje
+    # Si no hay porcentaje pero hay precios, calcularlo
     if info['porcentaje_descuento'] is None and info['precio_venta'] and info['precio_descuento']:
-        if info['precio_venta'] > 0 and info['precio_descuento'] < info['precio_venta']:
+        if info['precio_venta'] > info['precio_descuento']:
             info['porcentaje_descuento'] = ((info['precio_venta'] - info['precio_descuento']) / 
                                            info['precio_venta']) * 100
     
     return info
 
-def mostrar_producto(info, debug=False):
-    """Muestra la información del producto de forma atractiva"""
+def mostrar_producto(info):
+    """Muestra la información del producto formateada"""
     
-    if debug:
-        st.markdown("---")
-        st.markdown("### 🔍 Debug: Información detectada")
-        st.json(info)
-        st.markdown("---")
-    
-    # Contenedor principal del descuento
-    if info['porcentaje_descuento'] is not None and info['porcentaje_descuento'] > 0:
+    # Contenedor de descuento
+    if info['porcentaje_descuento'] and info['porcentaje_descuento'] > 0:
         st.markdown(f"""
         <div class="descuento-container">
             <div class="texto-descuento">🔥 ¡AHORRA!</div>
@@ -291,7 +276,7 @@ def mostrar_producto(info, debug=False):
     # Tarjeta del producto
     st.markdown('<div class="producto-card">', unsafe_allow_html=True)
     
-    # Nombre del producto
+    # Nombre
     if info['nombre']:
         st.markdown(f'<div class="producto-nombre">{info["nombre"]}</div>', unsafe_allow_html=True)
     
@@ -301,192 +286,169 @@ def mostrar_producto(info, debug=False):
                    unsafe_allow_html=True)
     
     # Precios
-    if info['precio_venta'] is not None or info['precio_descuento'] is not None:
+    if info['precio_venta'] or info['precio_descuento']:
         st.markdown('<div class="precio-container">', unsafe_allow_html=True)
         
         col1, col2 = st.columns(2)
         
         with col1:
-            if info['precio_venta'] is not None:
-                st.markdown(f"""
-                <div style="text-align: center;">
-                    <div class="precio-label">Precio Original</div>
-                    <div class="precio-original">${info['precio_venta']:,.0f}</div>
-                </div>
-                """, unsafe_allow_html=True)
+            st.markdown('<div class="precio-label">Precio Original</div>', unsafe_allow_html=True)
+            if info['precio_venta']:
+                st.markdown(f'<div class="precio-original">${info["precio_venta"]:,.0f}</div>', 
+                          unsafe_allow_html=True)
             else:
-                st.markdown("""
-                <div style="text-align: center;">
-                    <div class="precio-label">Precio Original</div>
-                    <div style="color: #999;">No disponible</div>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown('<div style="color: #999;">No disponible</div>', unsafe_allow_html=True)
         
         with col2:
-            if info['precio_descuento'] is not None:
-                st.markdown(f"""
-                <div style="text-align: center;">
-                    <div class="precio-label">Precio con Descuento</div>
-                    <div class="precio-descuento">${info['precio_descuento']:,.0f}</div>
-                </div>
-                """, unsafe_allow_html=True)
+            st.markdown('<div class="precio-label">Precio con Descuento</div>', unsafe_allow_html=True)
+            if info['precio_descuento']:
+                st.markdown(f'<div class="precio-descuento">${info["precio_descuento"]:,.0f}</div>', 
+                          unsafe_allow_html=True)
             else:
-                st.markdown("""
-                <div style="text-align: center;">
-                    <div class="precio-label">Precio con Descuento</div>
-                    <div style="color: #999;">No disponible</div>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown('<div style="color: #999;">No disponible</div>', unsafe_allow_html=True)
         
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # Ahorro total
+    # Ahorro
     if info['precio_venta'] and info['precio_descuento']:
         ahorro = info['precio_venta'] - info['precio_descuento']
         if ahorro > 0:
-            st.markdown(f"""
-            <div style="text-align: center; margin-top: 15px; padding: 10px; background: #e8f5e9; border-radius: 10px;">
-                <span style="color: #2e7d32; font-weight: 600;">💰 Te ahorras: ${ahorro:,.0f}</span>
+            st.markdown(f'''
+            <div style="text-align: center; margin-top: 15px;">
+                <span class="ahorro-badge">💰 Te ahorras: ${ahorro:,.0f}</span>
             </div>
-            """, unsafe_allow_html=True)
+            ''', unsafe_allow_html=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
 
-# ============ INTERFAZ PRINCIPAL CON PESTAÑAS ============
-
-tab1, tab2 = st.tabs(["📤 Cargar Archivo", "🔍 Consultar Productos"])
-
-# Pestaña 1: Cargar Archivo
-with tab1:
-    st.title("📤 Cargar Archivo de Datos")
+# ============ SIDEBAR (MENÚ LATERAL) ============
+with st.sidebar:
+    st.title("🛒 Descuentos App")
     st.markdown("---")
     
-    # Método de carga
-    metodo_carga = st.radio(
-        "Selecciona el método de carga:",
-        ["📁 Subir archivo desde mi computadora", "💻 Usar archivo del servidor"],
-        horizontal=False
+    # Sección 1: Carga de archivo
+    st.header("📂 Datos")
+    
+    archivo_subido = st.file_uploader(
+        "Cargar archivo Excel",
+        type=["xlsx", "xls"],
+        help="Selecciona el archivo con los datos de productos"
     )
     
-    if metodo_carga == "📁 Subir archivo desde mi computadora":
-        st.markdown('<div class="upload-area">', unsafe_allow_html=True)
-        
-        archivo_subido = st.file_uploader(
-            "Arrastra o selecciona el archivo Excel",
-            type=["xlsx", "xls"],
-            help="Formatos aceptados: .xlsx, .xls"
-        )
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-        
-        if archivo_subido is not None:
-            with st.spinner("🔄 Procesando archivo..."):
-                df = cargar_datos(archivo_subido)
-                
-                if df is not None and not df.empty:
-                    st.session_state.df = df
-                    st.session_state.datos_cargados = True
-                    st.session_state.nombre_archivo = archivo_subido.name
-                    
-                    # Mostrar estadísticas
-                    st.markdown(f"""
-                    <div class="stats-container">
-                        <h2>✅ ¡Archivo cargado exitosamente!</h2>
-                        <h3>📊 {len(df):,} productos encontrados</h3>
-                        <p>📄 Archivo: {archivo_subido.name}</p>
-                        <p>📏 Tamaño: {archivo_subido.size/1024/1024:.1f} MB</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Mostrar columnas encontradas
-                    with st.expander("🔍 Ver columnas del archivo"):
-                        mostrar_columnas_excel(df)
-                    
-                    st.success("👉 Ve a la pestaña **'Consultar Productos'** para comenzar a buscar")
+    if archivo_subido is not None:
+        with st.spinner("Procesando..."):
+            df = cargar_datos(archivo_subido)
+            if df is not None and not df.empty:
+                st.session_state.df = df
+                st.session_state.datos_cargados = True
+                st.session_state.nombre_archivo = archivo_subido.name
+                st.session_state.total_productos = len(df)
+                st.success("✅ Archivo cargado!")
     
-    else:  # Archivo del servidor
-        st.info("💡 Esta opción busca el archivo en el servidor donde está alojada la app")
-        
-        nombre_archivo = st.text_input(
-            "Nombre del archivo en el servidor:",
-            value="MADRUGON MAYO 2026 PUNTO DE VENTA.xlsx"
-        )
-        
-        if st.button("🔍 Buscar y cargar archivo", type="primary"):
-            if os.path.exists(nombre_archivo):
-                with st.spinner("🔄 Cargando archivo del servidor..."):
-                    df = cargar_datos(nombre_archivo)
-                    
-                    if df is not None and not df.empty:
-                        st.session_state.df = df
-                        st.session_state.datos_cargados = True
-                        st.session_state.nombre_archivo = nombre_archivo
-                        
-                        st.markdown(f"""
-                        <div class="stats-container">
-                            <h2>✅ ¡Archivo cargado exitosamente!</h2>
-                            <h3>📊 {len(df):,} productos encontrados</h3>
-                            <p>📄 Archivo: {nombre_archivo}</p>
-                        </div>
-                        """, unsafe_allow_html=True)
-                        
-                        with st.expander("🔍 Ver columnas del archivo"):
-                            mostrar_columnas_excel(df)
-                        
-                        st.success("👉 Ve a la pestaña **'Consultar Productos'** para comenzar a buscar")
-            else:
-                st.error(f"❌ No se encontró el archivo '{nombre_archivo}' en el servidor")
-
-# Pestaña 2: Consultar Productos
-with tab2:
-    st.title("🔍 Consultar Productos")
     st.markdown("---")
     
-    if not st.session_state.datos_cargados:
-        st.warning("⚠️ Primero debes cargar un archivo en la pestaña 'Cargar Archivo'")
-        st.info("""
-        📋 **Instrucciones:**
-        1. Ve a la pestaña **'Cargar Archivo'**
-        2. Sube tu archivo Excel con los datos del Madrugón
-        3. Vuelve a esta pestaña para buscar productos
-        """)
-    else:
-        # Mostrar info del archivo cargado
+    # Sección 2: Estado
+    st.header("📊 Estado")
+    
+    if st.session_state.datos_cargados:
         st.markdown(f"""
-        <div style="background: #e8f5e9; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
-            <p style="margin: 0; color: #2e7d32;">
-                ✅ <strong>{st.session_state.nombre_archivo}</strong> - 
-                {len(st.session_state.df):,} productos disponibles
-            </p>
+        <div class="status-card">
+            <div class="status-title">Archivo</div>
+            <div class="status-value" style="font-size: 14px;">{st.session_state.nombre_archivo}</div>
         </div>
         """, unsafe_allow_html=True)
         
-        # Opciones de debug
-        with st.expander("⚙️ Opciones avanzadas"):
-            modo_debug = st.checkbox("Modo debug (mostrar datos detectados)", value=False)
-            if st.button("📋 Mostrar todas las columnas"):
-                mostrar_columnas_excel(st.session_state.df)
+        st.markdown(f"""
+        <div class="status-card">
+            <div class="status-title">Productos</div>
+            <div class="status-value">{st.session_state.total_productos:,}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("Sin archivo cargado")
+    
+    st.markdown("---")
+    
+    # Sección 3: Opciones
+    st.header("⚙️ Opciones")
+    
+    st.session_state.modo_debug = st.checkbox("Modo diagnóstico", value=False)
+    
+    if st.session_state.datos_cargados:
+        if st.button("🗑️ Limpiar datos", use_container_width=True):
+            st.session_state.datos_cargados = False
+            st.session_state.df = None
+            st.session_state.nombre_archivo = ""
+            st.session_state.total_productos = 0
+            st.rerun()
+    
+    st.markdown("---")
+    
+    # Sección 4: Información
+    with st.expander("ℹ️ Información"):
+        st.write("""
+        **App de Consulta de Descuentos**
         
-        # Campo de búsqueda
-        st.write("### 🎯 Buscar Producto")
+        Versión: 1.0
         
+        Carga un archivo Excel y busca productos por código de barras.
+        """)
+
+# ============ CONTENIDO PRINCIPAL ============
+
+# Header
+st.title("🔍 Consulta de Productos")
+st.caption("Escanea o ingresa un código de barras para ver descuentos")
+
+# Verificar si hay datos cargados
+if not st.session_state.datos_cargados:
+    # Estado vacío
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("""
+        <div style="text-align: center; padding: 50px 20px;">
+            <div style="font-size: 80px; margin-bottom: 20px;">📤</div>
+            <h2>Sin archivo de datos</h2>
+            <p style="color: #666; font-size: 16px;">
+                Para comenzar, carga un archivo Excel usando el panel lateral izquierdo.
+            </p>
+            <div style="background: #f0f0f0; padding: 15px; border-radius: 10px; margin-top: 20px;">
+                <p style="margin: 0; color: #999; font-size: 14px;">
+                    ⬅️ Usa el menú lateral para cargar tus datos
+                </p>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+else:
+    # Buscador principal
+    st.markdown('<div class="search-container">', unsafe_allow_html=True)
+    
+    col1, col2 = st.columns([4, 1])
+    
+    with col1:
         codigo = st.text_input(
-            "Código de barras",
-            placeholder="Escanea o escribe el código aquí",
-            key="codigo_input"
+            "",
+            placeholder="🔍 Escanea o escribe el código de barras del producto...",
+            key="codigo_input",
+            label_visibility="collapsed"
         )
-        
+    
+    with col2:
+        buscar = st.button("🔍 Buscar", type="primary", use_container_width=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Resultados de búsqueda
+    if codigo or buscar:
         if codigo:
             codigo = codigo.strip()
             df = st.session_state.df
             
-            # Búsqueda en múltiples columnas
+            # Búsqueda flexible
             mascara = pd.Series(False, index=df.index)
-            
-            # Buscar en TODAS las columnas que puedan contener códigos
             for col in df.columns:
                 col_lower = col.strip().lower()
-                if any(keyword in col_lower for keyword in ['ean', 'código', 'codigo', 'code', 'barras']):
+                if any(kw in col_lower for kw in ['ean', 'código', 'codigo', 'code', 'barras']):
                     try:
                         mascara |= (df[col].astype(str).str.strip() == codigo)
                     except:
@@ -496,28 +458,47 @@ with tab2:
             
             if not resultado.empty:
                 fila = resultado.iloc[0]
-                st.success("✨ ¡Producto encontrado!")
                 
-                # Extraer y mostrar solo la información necesaria
-                info_producto = obtener_info_producto(fila, df)
-                mostrar_producto(info_producto, debug=modo_debug)
+                # Mostrar producto
+                info_producto = obtener_info_producto(fila)
+                mostrar_producto(info_producto)
                 
-                # Si hay modo debug, mostrar la fila completa
-                if modo_debug:
-                    with st.expander("🔍 Ver fila completa del Excel"):
+                # Debug
+                if st.session_state.modo_debug:
+                    with st.expander("🔧 Diagnóstico"):
+                        st.write("**Información detectada:**")
+                        st.json(info_producto)
+                        st.write("**Datos completos de la fila:**")
                         st.dataframe(pd.DataFrame([fila]), use_container_width=True)
                 
+                # Múltiples resultados
+                if len(resultado) > 1:
+                    with st.expander(f"📋 {len(resultado)} coincidencias encontradas"):
+                        st.dataframe(resultado, use_container_width=True, hide_index=True)
+            
             else:
-                st.error("❌ Código no encontrado")
+                st.error("❌ Producto no encontrado")
                 
                 # Sugerencias
-                with st.expander("💡 ¿Necesitas ayuda?"):
-                    st.write("**Primeros 5 registros del archivo:**")
+                with st.expander("💡 Ayuda"):
+                    st.write("**Primeros 5 productos en la base de datos:**")
                     st.dataframe(df.head(5), use_container_width=True)
-        
-        # Botón para cambiar de archivo
-        if st.button("🔄 Cargar otro archivo", use_container_width=True):
-            st.session_state.datos_cargados = False
-            st.session_state.df = None
-            st.session_state.nombre_archivo = ""
-            st.rerun()
+                    
+                    if st.session_state.modo_debug:
+                        st.write("**Códigos de ejemplo:**")
+                        for col in df.columns:
+                            if 'ean' in col.lower() or 'codigo' in col.lower():
+                                ejemplos = df[col].dropna().head(3).tolist()
+                                st.write(f"Columna '{col}':")
+                                for ej in ejemplos:
+                                    st.code(ej)
+        else:
+            st.warning("⚠️ Ingresa un código para buscar")
+
+# Footer
+st.markdown("---")
+st.markdown(
+    "<p style='text-align: center; color: #999; font-size: 12px;'>"
+    "App de Consulta de Descuentos v1.0 | Desarrollado con Streamlit</p>",
+    unsafe_allow_html=True
+)
