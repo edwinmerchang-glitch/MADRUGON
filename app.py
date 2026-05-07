@@ -109,32 +109,47 @@ if "buscar_auto" not in st.session_state:
 if "ultimo_codigo" not in st.session_state:
     st.session_state.ultimo_codigo = ""
 
-if "reset_input" not in st.session_state:
-    st.session_state.reset_input = False
-
 # =========================================
 # FUNCIONES
 # =========================================
 
 @st.cache_data
 def cargar_excel(archivo):
+
     try:
+
         df = pd.read_excel(archivo, sheet_name="8")
 
         for col in df.columns:
-            if any(x in col.lower() for x in ["ean", "codigo", "código", "barras"]):
-                df[col] = df[col].astype(str).str.strip()
+
+            if any(x in col.lower() for x in [
+                "ean",
+                "codigo",
+                "código",
+                "barras"
+            ]):
+
+                df[col] = (
+                    df[col]
+                    .astype(str)
+                    .str.strip()
+                )
 
         return df
 
     except Exception as e:
+
         st.error(f"Error leyendo Excel: {e}")
         return None
 
 
 def buscar_producto():
+
     st.session_state.buscar_auto = True
-    st.session_state.ultimo_codigo = st.session_state.codigo_input
+
+    st.session_state.ultimo_codigo = (
+        st.session_state.codigo_input
+    )
 
 
 def obtener_info_producto(fila):
@@ -156,16 +171,25 @@ def obtener_info_producto(fila):
 
         col_lower = col.lower()
 
+        # =====================
         # MARCA
+        # =====================
         if info["marca"] is None:
+
             if "marca" in col_lower or "brand" in col_lower:
                 info["marca"] = str(valor)
 
+        # =====================
         # NOMBRE
+        # =====================
         if info["nombre"] is None:
+
             if not any(x in col_lower for x in [
-                "codigo", "ean", "precio",
-                "descuento", "marca"
+                "codigo",
+                "ean",
+                "precio",
+                "descuento",
+                "marca"
             ]):
 
                 texto = str(valor)
@@ -173,7 +197,9 @@ def obtener_info_producto(fila):
                 if len(texto) > 3:
                     info["nombre"] = texto
 
+        # =====================
         # PORCENTAJE
+        # =====================
         try:
 
             valor_num = float(
@@ -185,15 +211,20 @@ def obtener_info_producto(fila):
             if (
                 0 < valor_num <= 100 and
                 any(x in col_lower for x in [
-                    "%", "descuento", "dscto"
+                    "%",
+                    "descuento",
+                    "dscto"
                 ])
             ):
+
                 info["porcentaje_descuento"] = valor_num
 
         except:
             pass
 
+        # =====================
         # PRECIOS
+        # =====================
         try:
 
             valor_num = float(
@@ -204,13 +235,16 @@ def obtener_info_producto(fila):
 
             if valor_num > 100:
 
+                # PRECIO ORIGINAL
                 if (
                     info["precio_original"] is None and
                     "precio" in col_lower and
                     "descuento" not in col_lower
                 ):
+
                     info["precio_original"] = valor_num
 
+                # PRECIO DESCUENTO
                 if (
                     info["precio_descuento"] is None and
                     (
@@ -219,12 +253,15 @@ def obtener_info_producto(fila):
                         "oferta" in col_lower
                     )
                 ):
+
                     info["precio_descuento"] = valor_num
 
         except:
             pass
 
-    # CALCULAR PRECIO DESCUENTO
+    # =========================================
+    # CALCULAR PRECIO CON DESCUENTO
+    # =========================================
     if (
         info["precio_descuento"] is None and
         info["precio_original"] and
@@ -236,7 +273,9 @@ def obtener_info_producto(fila):
             (1 - info["porcentaje_descuento"] / 100)
         )
 
+    # =========================================
     # CALCULAR %
+    # =========================================
     if (
         info["porcentaje_descuento"] is None and
         info["precio_original"] and
@@ -247,7 +286,8 @@ def obtener_info_producto(fila):
             (
                 info["precio_original"] -
                 info["precio_descuento"]
-            ) /
+            )
+            /
             info["precio_original"]
         ) * 100
 
@@ -256,10 +296,17 @@ def obtener_info_producto(fila):
 
 def mostrar_producto(info):
 
-    if info["porcentaje_descuento"]:
+    # =========================================
+    # DESCUENTO
+    # =========================================
+    if (
+        info["porcentaje_descuento"] is not None and
+        info["porcentaje_descuento"] > 0
+    ):
 
         st.markdown(f"""
         <div class="descuento-container">
+
             <div class="texto-descuento">
                 🔥 ¡AHORRA!
             </div>
@@ -271,23 +318,45 @@ def mostrar_producto(info):
             <div class="texto-descuento">
                 DE DESCUENTO
             </div>
+
         </div>
         """, unsafe_allow_html=True)
 
-    st.markdown('<div class="producto-card">', unsafe_allow_html=True)
+    # =========================================
+    # TARJETA
+    # =========================================
+    st.markdown(
+        '<div class="producto-card">',
+        unsafe_allow_html=True
+    )
 
+    # NOMBRE
     if info["nombre"]:
+
         st.markdown(
-            f'<div class="producto-nombre">{info["nombre"]}</div>',
+            f'''
+            <div class="producto-nombre">
+                {info["nombre"]}
+            </div>
+            ''',
             unsafe_allow_html=True
         )
 
+    # MARCA
     if info["marca"]:
+
         st.markdown(
-            f'<div class="producto-marca">🏷️ {info["marca"]}</div>',
+            f'''
+            <div class="producto-marca">
+                🏷️ {info["marca"]}
+            </div>
+            ''',
             unsafe_allow_html=True
         )
 
+    # =========================================
+    # PRECIOS
+    # =========================================
     col1, col2 = st.columns(2)
 
     with col1:
@@ -295,8 +364,13 @@ def mostrar_producto(info):
         st.caption("Precio Original")
 
         if info["precio_original"]:
+
             st.markdown(
-                f'<div class="precio-original">${info["precio_original"]:,.0f}</div>',
+                f'''
+                <div class="precio-original">
+                    ${info["precio_original"]:,.0f}
+                </div>
+                ''',
                 unsafe_allow_html=True
             )
 
@@ -305,11 +379,19 @@ def mostrar_producto(info):
         st.caption("Precio con Descuento")
 
         if info["precio_descuento"]:
+
             st.markdown(
-                f'<div class="precio-descuento">${info["precio_descuento"]:,.0f}</div>',
+                f'''
+                <div class="precio-descuento">
+                    ${info["precio_descuento"]:,.0f}
+                </div>
+                ''',
                 unsafe_allow_html=True
             )
 
+    # =========================================
+    # AHORRO
+    # =========================================
     if (
         info["precio_original"] and
         info["precio_descuento"]
@@ -320,18 +402,25 @@ def mostrar_producto(info):
             info["precio_descuento"]
         )
 
-        st.markdown(
-            f"""
-            <div style="text-align:center;">
-                <div class="ahorro">
-                    💰 Ahorras ${ahorro:,.0f}
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        if ahorro > 0:
 
-    st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown(
+                f'''
+                <div style="text-align:center;">
+
+                    <div class="ahorro">
+                        💰 Ahorras ${ahorro:,.0f}
+                    </div>
+
+                </div>
+                ''',
+                unsafe_allow_html=True
+            )
+
+    st.markdown(
+        "</div>",
+        unsafe_allow_html=True
+    )
 
 # =========================================
 # SIDEBAR
@@ -341,7 +430,7 @@ with st.sidebar:
     st.title("🛒 Descuentos")
 
     archivo = st.file_uploader(
-        "Cargar Excel",
+        "Cargar archivo Excel",
         type=["xlsx", "xls"]
     )
 
@@ -350,8 +439,10 @@ with st.sidebar:
         df = cargar_excel(archivo)
 
         if df is not None:
+
             st.session_state.df = df
-            st.success("Archivo cargado")
+
+            st.success("✅ Archivo cargado")
 
             st.write(f"Productos: {len(df):,}")
 
@@ -359,7 +450,10 @@ with st.sidebar:
 # MAIN
 # =========================================
 st.title("🔍 Consulta de Productos")
-st.caption("Escanea o escribe el código de barras")
+
+st.caption(
+    "Escanea o escribe el código de barras"
+)
 
 if st.session_state.df is None:
 
@@ -367,6 +461,9 @@ if st.session_state.df is None:
 
 else:
 
+    # =========================================
+    # BUSCADOR
+    # =========================================
     st.markdown(
         '<div class="search-box">',
         unsafe_allow_html=True
@@ -391,11 +488,17 @@ else:
     # =========================================
     if st.session_state.buscar_auto:
 
-        codigo = st.session_state.ultimo_codigo.strip()
+        codigo = (
+            st.session_state.ultimo_codigo
+            .strip()
+        )
 
         df = st.session_state.df
 
-        mascara = pd.Series(False, index=df.index)
+        mascara = pd.Series(
+            False,
+            index=df.index
+        )
 
         for col in df.columns:
 
@@ -427,24 +530,35 @@ else:
 
         else:
 
-            st.error("❌ Producto no encontrado")
+            st.error(
+                "❌ Producto no encontrado"
+            )
 
+        # =====================================
         # RESET
+        # =====================================
         st.session_state.buscar_auto = False
 
+        # =====================================
         # AUTOFOCUS
+        # =====================================
         st.components.v1.html(
             """
             <script>
+
                 const inputs =
-                    window.parent.document.querySelectorAll('input');
+                    window.parent.document
+                    .querySelectorAll('input');
 
                 for (const input of inputs) {
+
                     if (input.type === 'text') {
+
                         input.focus();
                         break;
                     }
                 }
+
             </script>
             """,
             height=0
@@ -455,4 +569,6 @@ else:
 # =========================================
 st.markdown("---")
 
-st.caption("App de Consulta de Descuentos v2.0")
+st.caption(
+    "App de Consulta de Descuentos v2.0"
+)
