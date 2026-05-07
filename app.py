@@ -1,8 +1,6 @@
 import streamlit as st
-import pandas as pd
 
-# CONFIGURACIÓN
-ARCHIVO_EXCEL = "MADRUGON MAYO 2026 PUNTO DE VENTA.xlsx"
+ARCHIVO_EXCEL = r"C:\Users\TU_USUARIO\Documents\MADRUGON MAYO 2026 PUNTO DE VENTA.xlsx"
 HOJA = "8"
 
 # CARGAR EXCEL
@@ -58,4 +56,10 @@ if codigo:
         with col1:
             st.metric("Marca", marca)
             st.metric("Descuento", f"{descuento}%")
+
+        with col2:
+            st.metric("Precio Original", f"${precio_original:,.0f}")
+            st.metric("Precio Final", f"${precio_final:,.0f}")
+
+    else:
         st.error("Código no encontrado")
