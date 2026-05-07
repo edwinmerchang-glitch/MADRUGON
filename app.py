@@ -109,6 +109,12 @@ if "buscar_auto" not in st.session_state:
 if "ultimo_codigo" not in st.session_state:
     st.session_state.ultimo_codigo = ""
 
+if "resultado_actual" not in st.session_state:
+    st.session_state.resultado_actual = None
+
+if "info_actual" not in st.session_state:
+    st.session_state.info_actual = None
+
 # =========================================
 # FUNCIONES
 # =========================================
@@ -469,9 +475,8 @@ else:
         unsafe_allow_html=True
     )
 
-    codigo = st.text_input(
+    st.text_input(
         "",
-        value="",
         placeholder="🔍 Escanea el código...",
         key="codigo_input",
         label_visibility="collapsed",
@@ -526,43 +531,55 @@ else:
 
             info = obtener_info_producto(fila)
 
-            mostrar_producto(info)
+            # GUARDAR RESULTADO
+            st.session_state.resultado_actual = fila
+            st.session_state.info_actual = info
 
         else:
+
+            st.session_state.resultado_actual = None
+            st.session_state.info_actual = None
 
             st.error(
                 "❌ Producto no encontrado"
             )
 
-        # =====================================
         # RESET
-        # =====================================
         st.session_state.buscar_auto = False
 
-        # =====================================
-        # AUTOFOCUS
-        # =====================================
-        st.components.v1.html(
-            """
-            <script>
+    # =====================================
+    # MOSTRAR RESULTADO
+    # =====================================
+    if st.session_state.info_actual is not None:
 
-                const inputs =
-                    window.parent.document
-                    .querySelectorAll('input');
-
-                for (const input of inputs) {
-
-                    if (input.type === 'text') {
-
-                        input.focus();
-                        break;
-                    }
-                }
-
-            </script>
-            """,
-            height=0
+        mostrar_producto(
+            st.session_state.info_actual
         )
+
+    # =====================================
+    # AUTOFOCUS
+    # =====================================
+    st.components.v1.html(
+        """
+        <script>
+
+            const inputs =
+                window.parent.document
+                .querySelectorAll('input');
+
+            for (const input of inputs) {
+
+                if (input.type === 'text') {
+
+                    input.focus();
+                    break;
+                }
+            }
+
+        </script>
+        """,
+        height=0
+    )
 
 # =========================================
 # FOOTER
