@@ -512,6 +512,6 @@ else:
 st.markdown("---")
 st.markdown(
     "<p style='text-align: center; color: #999; font-size: 12px;'>"
-    "App de Consulta de Descuentos v2.0 | Desarrollado con Streamlit</p>",
+    "App de Consulta de Descuentos v1.0 | Desarrollado por Edwin Merchan</p>",
     unsafe_allow_html=True
 )
