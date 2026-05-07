@@ -1,4 +1,5 @@
 import streamlit as st
+import pandas as pd
 
 ARCHIVO_EXCEL = r"C:\Users\edwin\Downloads\MADRUGON MAYO 2026 PUNTO DE VENTA.xlsx"
 HOJA = "8"
