@@ -1,4 +1,54 @@
 import streamlit as st
+import pandas as pd
+
+st.set_page_config(
+    page_title="Consulta de Descuentos",
+    page_icon="🛒",
+    layout="centered"
+)
+
+@st.cache_data
+def cargar_datos():
+    archivo = "MADRUGON MAYO 2026 PUNTO DE VENTA.xlsx"
+
+    df = pd.read_excel(
+        archivo,
+        sheet_name="8"
+    )
+
+    columnas_codigo = [
+        "EAN PADRE ",
+        "Código"
+    ]
+
+    for col in columnas_codigo:
+        if col in df.columns:
+            df[col] = df[col].astype(str)
+
+    return df
+
+try:
+    df = cargar_datos()
+except Exception as e:
+    st.error(f"Error cargando archivo: {e}")
+    st.stop()
+
+st.title("🛍️ Consulta de Descuentos")
+st.write("Escanea o escribe el código de barras")
+
+codigo = st.text_input(
+    "Código de barras",
+    placeholder="Escanea aquí"
+)
+
+if codigo:
+
+    codigo = codigo.strip()
+
+    resultado = df[
+        (df["EAN PADRE "] == codigo)
+        |
+        (df["Código"] == codigo)
     ]
 
     if not resultado.empty:
@@ -7,51 +57,5 @@ import streamlit as st
 
         st.success("Producto encontrado")
 
-        st.divider()
-
         col1, col2 = st.columns(2)
-
-        with col1:
-
-            st.metric(
-                "Marca",
-                str(fila.get("Marca", "Sin dato"))
-            )
-
-            st.metric(
-                "Descuento",
-                f"{fila.get('Porcentaje Descuento', 0)}%"
-            )
-
-        with col2:
-
-            try:
-                precio_original = int(fila.get("Precio de venta ", 0))
-            except:
-                precio_original = 0
-
-            try:
-                precio_final = int(fila.get("Precio de venta con descuento ", 0))
-            except:
-                precio_final = 0
-
-            st.metric(
-                "Precio Original",
-                f"$ {precio_original:,}"
-            )
-
-            st.metric(
-                "Precio Final",
-                f"$ {precio_final:,}"
-            )
-
-        st.divider()
-
-        st.subheader("Producto")
-        st.info(str(fila.get("name", "Sin nombre")))
-
-        st.subheader("Estado")
-        st.write(str(fila.get("ESTADO", "Sin estado")))
-
-    else:
         st.error("Código no encontrado")
