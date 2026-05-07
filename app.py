@@ -130,12 +130,6 @@ st.markdown("""
         margin: 20px 0;
     }
     
-    /* Estilo para el input al enfocarse */
-    .stTextInput input:focus {
-        border-color: #FF416C !important;
-        box-shadow: 0 0 0 2px rgba(255, 65, 108, 0.2) !important;
-    }
-    
     @media (max-width: 768px) {
         .porcentaje-descuento {
             font-size: 60px;
@@ -158,10 +152,6 @@ if 'total_productos' not in st.session_state:
     st.session_state.total_productos = 0
 if 'modo_debug' not in st.session_state:
     st.session_state.modo_debug = False
-if 'ultimo_codigo' not in st.session_state:
-    st.session_state.ultimo_codigo = ""
-if 'buscar_enter' not in st.session_state:
-    st.session_state.buscar_enter = False
 
 # ============ FUNCIONES ============
 
@@ -358,33 +348,6 @@ def mostrar_producto(info):
     
     st.markdown('</div>', unsafe_allow_html=True)
 
-def realizar_busqueda(codigo):
-    """Realiza la búsqueda del producto y retorna el resultado"""
-    if not codigo or not st.session_state.datos_cargados:
-        return None, None
-    
-    codigo = codigo.strip()
-    df = st.session_state.df
-    
-    # Búsqueda
-    mascara = pd.Series(False, index=df.index)
-    for col in df.columns:
-        col_lower = col.strip().lower()
-        if any(kw in col_lower for kw in ['ean', 'código', 'codigo', 'code', 'barras']):
-            try:
-                mascara |= (df[col].astype(str).str.strip() == codigo)
-            except:
-                pass
-    
-    resultado = df[mascara]
-    
-    if not resultado.empty:
-        fila = resultado.iloc[0]
-        info_producto = obtener_info_producto(fila)
-        return resultado, info_producto
-    else:
-        return None, None
-
 # ============ SIDEBAR ============
 with st.sidebar:
     st.title("🛒 Descuentos App")
@@ -444,7 +407,6 @@ with st.sidebar:
             st.session_state.df = None
             st.session_state.nombre_archivo = ""
             st.session_state.total_productos = 0
-            st.session_state.ultimo_codigo = ""
             st.rerun()
     
     st.markdown("---")
@@ -453,19 +415,15 @@ with st.sidebar:
         st.write("""
         **App de Consulta de Descuentos**
         
-        Versión: 2.1
+        Versión: 2.0
         
         Carga un archivo Excel y busca productos por código de barras.
-        
-        **Consejos:**
-        - Escanea el código y presiona Enter
-        - O usa el botón Buscar
         """)
 
 # ============ CONTENIDO PRINCIPAL ============
 
 st.title("🔍 Consulta de Productos")
-st.caption("Escanea o ingresa un código de barras y presiona **Enter** para ver descuentos")
+st.caption("Escanea o ingresa un código de barras para ver descuentos")
 
 if not st.session_state.datos_cargados:
     col1, col2, col3 = st.columns([1, 2, 1])
@@ -485,7 +443,7 @@ if not st.session_state.datos_cargados:
         </div>
         """, unsafe_allow_html=True)
 else:
-    # Buscador con detección de Enter
+    # Buscador
     st.markdown('<div class="search-container">', unsafe_allow_html=True)
     
     col1, col2 = st.columns([4, 1])
@@ -493,10 +451,9 @@ else:
     with col1:
         codigo = st.text_input(
             "",
-            placeholder="🔍 Escanea o escribe el código de barras del producto y presiona Enter...",
+            placeholder="🔍 Escanea o escribe el código de barras del producto...",
             key="codigo_input",
-            label_visibility="collapsed",
-            on_change=None  # Importante: no ejecutar automáticamente al cambiar
+            label_visibility="collapsed"
         )
     
     with col2:
@@ -504,50 +461,29 @@ else:
     
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # Detectar si se presionó Enter o el botón
-    if codigo and codigo != st.session_state.ultimo_codigo:
-        # El código ha cambiado, probablemente por escaneo con Enter
-        st.session_state.ultimo_codigo = codigo
-        # Realizar búsqueda automática
-        resultado, info_producto = realizar_busqueda(codigo)
-        
-        if resultado is not None:
-            mostrar_producto(info_producto)
-            
-            # Debug
-            if st.session_state.modo_debug:
-                with st.expander("🔧 Diagnóstico"):
-                    st.write("**Información detectada:**")
-                    st.json(info_producto)
-                    st.write("**Datos completos de la fila:**")
-                    st.dataframe(pd.DataFrame([resultado.iloc[0]]), use_container_width=True)
-            
-            # Múltiples resultados
-            if len(resultado) > 1:
-                with st.expander(f"📋 {len(resultado)} coincidencias"):
-                    st.dataframe(resultado, use_container_width=True, hide_index=True)
-        else:
-            st.error("❌ Producto no encontrado")
-            
-            with st.expander("💡 Ayuda"):
-                st.write(f"**Código buscado:** `{codigo}`")
-                st.write("**Primeros productos en la base:**")
-                # Mostrar primeros códigos como ayuda
-                df = st.session_state.df
-                for col in df.columns:
-                    col_lower = col.strip().lower()
-                    if any(kw in col_lower for kw in ['ean', 'código', 'codigo', 'code', 'barras']):
-                        st.write(f"**Ejemplos de códigos en {col}:**")
-                        st.write(df[col].head(10).tolist())
-                        break
-    
-    elif buscar:
-        # Se presionó el botón buscar
+    # Resultados
+    if codigo or buscar:
         if codigo:
-            st.session_state.ultimo_codigo = codigo
-            resultado, info_producto = realizar_busqueda(codigo)
+            codigo = codigo.strip()
+            df = st.session_state.df
             
-            if resultado is not None:
+            # Búsqueda
+            mascara = pd.Series(False, index=df.index)
+            for col in df.columns:
+                col_lower = col.strip().lower()
+                if any(kw in col_lower for kw in ['ean', 'código', 'codigo', 'code', 'barras']):
+                    try:
+                        mascara |= (df[col].astype(str).str.strip() == codigo)
+                    except:
+                        pass
+            
+            resultado = df[mascara]
+            
+            if not resultado.empty:
+                fila = resultado.iloc[0]
+                
+                # Obtener y mostrar información
+                info_producto = obtener_info_producto(fila)
                 mostrar_producto(info_producto)
                 
                 # Debug
@@ -556,25 +492,19 @@ else:
                         st.write("**Información detectada:**")
                         st.json(info_producto)
                         st.write("**Datos completos de la fila:**")
-                        st.dataframe(pd.DataFrame([resultado.iloc[0]]), use_container_width=True)
+                        st.dataframe(pd.DataFrame([fila]), use_container_width=True)
                 
                 # Múltiples resultados
                 if len(resultado) > 1:
                     with st.expander(f"📋 {len(resultado)} coincidencias"):
                         st.dataframe(resultado, use_container_width=True, hide_index=True)
+            
             else:
                 st.error("❌ Producto no encontrado")
                 
                 with st.expander("💡 Ayuda"):
-                    st.write(f"**Código buscado:** `{codigo}`")
                     st.write("**Primeros productos en la base:**")
-                    df = st.session_state.df
-                    for col in df.columns:
-                        col_lower = col.strip().lower()
-                        if any(kw in col_lower for kw in ['ean', 'código', 'codigo', 'code', 'barras']):
-                            st.write(f"**Ejemplos de códigos en {col}:**")
-                            st.write(df[col].head(10).tolist())
-                            break
+                    st.dataframe(df.head(5), use_container_width=True)
         else:
             st.warning("⚠️ Ingresa un código para buscar")
 
@@ -582,6 +512,6 @@ else:
 st.markdown("---")
 st.markdown(
     "<p style='text-align: center; color: #999; font-size: 12px;'>"
-    "App de Consulta de Descuentos v2.1 | Escanea y presiona Enter | Desarrollado con Streamlit</p>",
+    "App de Consulta de Descuentos v1.0 | Desarrollado por Edwin Merchán</p>",
     unsafe_allow_html=True
 )
