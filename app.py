@@ -2,317 +2,441 @@ import streamlit as st
 import pandas as pd
 import sqlite3
 import os
-from datetime import datetime
-import io
+from io import BytesIO
 
-# Configurar la pagina
+# Configuración de la página
 st.set_page_config(
-    page_title="Scanner de Descuentos", 
-    layout="centered",
-    page_icon="🛒"
+    page_title="Sistema de Consulta de Productos",
+    page_icon="🛒",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# Inicializar base de datos SQLite
-def init_database():
-    conn = sqlite3.connect('productos.db')
-    c = conn.cursor()
-    
-    # Crear tabla si no existe
-    c.execute('''CREATE TABLE IF NOT EXISTS productos (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        codigo TEXT UNIQUE,
-        marca TEXT,
-        descuento REAL,
-        precio_final REAL,
-        precio_original REAL,
-        fecha_actualizacion TIMESTAMP
-    )''')
-    
-    conn.commit()
-    conn.close()
+# Estilos personalizados
+st.markdown("""
+<style>
+    .main-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 1rem;
+        border-radius: 10px;
+        color: white;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .product-card {
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        padding: 1.5rem;
+        border-radius: 15px;
+        margin: 1rem 0;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .price {
+        font-size: 2rem;
+        font-weight: bold;
+        color: #28a745;
+    }
+    .original-price {
+        text-decoration: line-through;
+        color: #dc3545;
+        font-size: 1.2rem;
+    }
+    .discount {
+        background-color: #ffc107;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-weight: bold;
+        display: inline-block;
+    }
+    .success {
+        background-color: #d4edda;
+        color: #155724;
+        padding: 1rem;
+        border-radius: 10px;
+    }
+    .error {
+        background-color: #f8d7da;
+        color: #721c24;
+        padding: 1rem;
+        border-radius: 10px;
+    }
+    .stButton button {
+        background-color: #667eea;
+        color: white;
+        font-weight: bold;
+    }
+</style>
+""", unsafe_allow_html=True)
 
-# Cargar datos desde archivo (Excel o CSV)
-def cargar_datos_a_sqlite(archivo, tipo='excel', hoja="8"):
-    try:
-        if tipo == 'excel':
-            # Intentar leer Excel sin openpyxl (usar xlrd para .xls)
-            try:
-                df = pd.read_excel(archivo, sheet_name=hoja)
-            except:
-                # Si falla, intentar con diferentes motores
-                try:
-                    df = pd.read_excel(archivo, sheet_name=hoja, engine='xlrd')
-                except:
-                    st.error("No se pudo leer el Excel. Por favor, guarda el archivo como CSV y usalo en su lugar.")
-                    return False, "Error leyendo Excel"
-        else:  # CSV
-            df = pd.read_csv(archivo)
+
+class ProductosApp:
+    def __init__(self):
+        self.db_path = "productos.db"
+        self.init_database()
+    
+    def init_database(self):
+        """Inicializar la base de datos SQLite"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
         
-        # Limpiar columnas
-        df.columns = df.columns.str.strip()
-        
-        # Identificar columnas (buscar nombres similares)
-        col_codigo = None
-        col_marca = None
-        col_descuento = None
-        col_precio_final = None
-        col_precio_original = None
-        
-        for col in df.columns:
-            col_lower = col.lower().strip()
-            if 'codigo' in col_lower or 'código' in col_lower or 'cod' in col_lower:
-                col_codigo = col
-            elif 'marca' in col_lower:
-                col_marca = col
-            elif 'descuento' in col_lower or '%' in col:
-                col_descuento = col
-            elif 'final' in col_lower or 'con descuento' in col_lower:
-                col_precio_final = col
-            elif 'original' in col_lower or 'venta' in col_lower:
-                col_precio_original = col
-        
-        # Usar las columnas encontradas o las originales
-        df.rename(columns={
-            col_codigo: 'codigo' if col_codigo else 'Código',
-            col_marca: 'marca' if col_marca else 'Marca',
-            col_descuento: 'descuento' if col_descuento else '% Descuento',
-            col_precio_final: 'precio_final' if col_precio_final else 'Precio de venta con descuento',
-            col_precio_original: 'precio_original' if col_precio_original else 'Precio de venta'
-        }, inplace=True)
-        
-        # Tomar solo las columnas necesarias
-        columnas_necesarias = ['codigo', 'marca', 'descuento', 'precio_final', 'precio_original']
-        columnas_existentes = [col for col in columnas_necesarias if col in df.columns]
-        
-        if not columnas_existentes:
-            return False, "No se encontraron las columnas necesarias"
-        
-        df = df[columnas_existentes]
-        
-        # Limpiar datos
-        df['codigo'] = df['codigo'].astype(str).str.strip()
-        df['marca'] = df['marca'].astype(str).str.strip()
-        df['descuento'] = pd.to_numeric(df['descuento'], errors='coerce').fillna(0)
-        df['precio_final'] = pd.to_numeric(df['precio_final'], errors='coerce').fillna(0)
-        df['precio_original'] = pd.to_numeric(df['precio_original'], errors='coerce').fillna(0)
-        
-        # Conectar a SQLite
-        conn = sqlite3.connect('productos.db')
-        
-        # Limpiar tabla existente
-        conn.execute("DELETE FROM productos")
-        
-        # Insertar datos
-        for _, row in df.iterrows():
-            conn.execute("""
-                INSERT OR REPLACE INTO productos 
-                (codigo, marca, descuento, precio_final, precio_original, fecha_actualizacion)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (
-                row['codigo'],
-                row['marca'],
-                float(row['descuento']),
-                float(row['precio_final']),
-                float(row['precio_original']),
-                datetime.now()
-            ))
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS productos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                codigo TEXT NOT NULL UNIQUE,
+                nombre TEXT NOT NULL,
+                marca TEXT,
+                porcentaje_descuento REAL,
+                precio_original REAL,
+                precio_final REAL,
+                estado TEXT,
+                proveedor TEXT,
+                categoria TEXT
+            )
+        ''')
         
         conn.commit()
         conn.close()
-        
-        return True, len(df)
-    except Exception as e:
-        return False, str(e)
-
-# Buscar producto en SQLite
-def buscar_producto(codigo):
-    conn = sqlite3.connect('productos.db')
-    c = conn.cursor()
     
-    c.execute("SELECT * FROM productos WHERE codigo = ?", (codigo.strip(),))
-    resultado = c.fetchone()
-    
-    conn.close()
-    
-    if resultado:
-        return {
-            'codigo': resultado[1],
-            'marca': resultado[2],
-            'descuento': resultado[3],
-            'precio_final': resultado[4],
-            'precio_original': resultado[5]
-        }
-    return None
-
-# Obtener estadisticas
-def get_estadisticas():
-    conn = sqlite3.connect('productos.db')
-    c = conn.cursor()
-    
-    c.execute("SELECT COUNT(*) FROM productos")
-    total = c.fetchone()[0]
-    
-    c.execute("SELECT AVG(descuento) FROM productos WHERE descuento > 0")
-    promedio_desc = c.fetchone()[0]
-    
-    conn.close()
-    
-    return total, promedio_desc
-
-# Inicializar base de datos
-init_database()
-
-# Interfaz principal
-st.title("🛒 Scanner de Descuentos")
-st.write("Escanea o escribe el codigo de barras para ver el descuento")
-
-# Sidebar
-with st.sidebar:
-    st.header("📋 Configuracion")
-    
-    # Opcion para elegir tipo de archivo
-    st.subheader("1. Cargar datos")
-    tipo_archivo = st.radio(
-        "Tipo de archivo:",
-        ["Excel (.xls)", "CSV (Recomendado)"],
-        help="CSV es mas compatible y no necesita librerias adicionales"
-    )
-    
-    # Subir archivo
-    if tipo_archivo == "CSV (Recomendado)":
-        archivo = st.file_uploader(
-            "Cargar archivo CSV",
-            type=['csv'],
-            help="Guarda tu Excel como CSV (Archivo > Guardar como > CSV)"
-        )
-    else:
-        archivo = st.file_uploader(
-            "Cargar archivo Excel",
-            type=['xls', 'xlsx'],
-            help="Para archivos .xlsx necesitas instalar openpyxl"
-        )
-    
-    if archivo:
-        with st.spinner("Cargando datos a la base de datos..."):
-            if tipo_archivo == "CSV (Recomendado)":
-                success, result = cargar_datos_a_sqlite(archivo, tipo='csv')
-            else:
-                success, result = cargar_datos_a_sqlite(archivo, tipo='excel')
+    def cargar_desde_excel(self, archivo_bytes):
+        """Cargar datos desde archivo Excel"""
+        try:
+            df = pd.read_excel(BytesIO(archivo_bytes), sheet_name=8)
             
-            if success:
-                st.success(f"✅ Datos cargados! {result} productos en la base de datos")
-                st.balloons()
-            else:
-                st.error(f"❌ Error: {result}")
-                if "openpyxl" in str(result):
-                    st.info("💡 Consejo: Guarda tu archivo Excel como CSV y sube ese archivo en su lugar.")
+            conn = sqlite3.connect(self.db_path)
+            
+            # Limpiar y preparar datos
+            df_clean = df.copy()
+            
+            # Mapear columnas
+            df_clean['codigo'] = df_clean['EAN PADRE'].astype(str).str.strip()
+            df_clean['nombre'] = df_clean['name'].fillna('')
+            df_clean['marca'] = df_clean['Marca'].fillna('')
+            df_clean['porcentaje_descuento'] = pd.to_numeric(df_clean['Porcentaje Descuento'], errors='coerce').fillna(0) * 100
+            df_clean['precio_original'] = pd.to_numeric(df_clean['Precio de venta'], errors='coerce').fillna(0)
+            df_clean['precio_final'] = pd.to_numeric(df_clean['Precio de venta con descuento'], errors='coerce').fillna(0)
+            df_clean['estado'] = df_clean['ESTADO'].fillna('')
+            df_clean['proveedor'] = df_clean['supplier'].fillna('')
+            df_clean['categoria'] = df_clean['NUMERO LINEA'].fillna('').astype(str)
+            
+            # Insertar datos
+            for _, row in df_clean.iterrows():
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT OR REPLACE INTO productos 
+                    (codigo, nombre, marca, porcentaje_descuento, precio_original, 
+                     precio_final, estado, proveedor, categoria)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    str(row['codigo']),
+                    str(row['nombre'])[:500],
+                    str(row['marca']),
+                    float(row['porcentaje_descuento']),
+                    float(row['precio_original']),
+                    float(row['precio_final']),
+                    str(row['estado']),
+                    str(row['proveedor']),
+                    str(row['categoria'])
+                ))
+                conn.commit()
+            
+            conn.close()
+            return len(df_clean)
+        except Exception as e:
+            st.error(f"Error al cargar datos: {e}")
+            return 0
     
-    # Mostrar estadisticas
-    st.divider()
-    st.subheader("📊 Estadisticas")
-    
-    total_productos, promedio_desc = get_estadisticas()
-    st.metric("Total de productos", total_productos)
-    if promedio_desc and promedio_desc > 0:
-        st.metric("Descuento promedio", f"{promedio_desc:.1f}%")
-    
-    # Opciones
-    st.divider()
-    if st.button("🗑️ Limpiar base de datos"):
-        conn = sqlite3.connect('productos.db')
-        conn.execute("DELETE FROM productos")
-        conn.commit()
-        conn.close()
-        st.success("Base de datos limpiada!")
-        st.rerun()
-
-# Area principal de busqueda
-st.markdown("---")
-
-# Busqueda por codigo
-codigo = st.text_input(
-    "🔍 Codigo de barras",
-    placeholder="Ej: 1234567890",
-    help="Escanea o escribe el codigo de barras del producto",
-    key="codigo_input"
-)
-
-# Boton de busqueda
-col1, col2, col3 = st.columns([1, 2, 1])
-with col2:
-    buscar_click = st.button("🔎 Buscar producto", use_container_width=True)
-
-# Realizar busqueda
-if codigo and buscar_click:
-    with st.spinner("Buscando..."):
-        producto = buscar_producto(codigo)
-    
-    if producto:
-        st.success("✅ Producto encontrado!")
+    def buscar_producto(self, codigo):
+        """Buscar producto por código de barras"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
         
-        # Mostrar informacion del producto
-        col1, col2 = st.columns(2)
+        cursor.execute('''
+            SELECT codigo, nombre, marca, porcentaje_descuento, 
+                   precio_original, precio_final, estado, proveedor, categoria
+            FROM productos 
+            WHERE codigo = ? OR codigo LIKE ? OR codigo LIKE ?
+        ''', (codigo, f'%{codigo}%', f'{codigo}%'))
+        
+        resultado = cursor.fetchone()
+        conn.close()
+        return resultado
+    
+    def buscar_por_nombre(self, termino):
+        """Buscar productos por nombre"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT codigo, nombre, marca, porcentaje_descuento, 
+                   precio_original, precio_final, estado
+            FROM productos 
+            WHERE LOWER(nombre) LIKE ? AND estado = 'ACTIVO'
+            LIMIT 50
+        ''', (f'%{termino.lower()}%',))
+        
+        resultados = cursor.fetchall()
+        conn.close()
+        return resultados
+    
+    def get_marcas_top(self, limit=10):
+        """Obtener marcas con más productos"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT marca, COUNT(*) as total 
+            FROM productos 
+            WHERE marca != '' AND estado = 'ACTIVO'
+            GROUP BY marca 
+            ORDER BY total DESC 
+            LIMIT ?
+        ''', (limit,))
+        
+        resultados = cursor.fetchall()
+        conn.close()
+        return resultados
+    
+    def get_productos_mas_descuento(self, limit=20):
+        """Obtener productos con mayor descuento"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT nombre, marca, porcentaje_descuento, precio_original, precio_final
+            FROM productos 
+            WHERE estado = 'ACTIVO' AND porcentaje_descuento > 0
+            ORDER BY porcentaje_descuento DESC 
+            LIMIT ?
+        ''', (limit,))
+        
+        resultados = cursor.fetchall()
+        conn.close()
+        return resultados
+    
+    def get_stats(self):
+        """Obtener estadísticas de la base de datos"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT COUNT(*) FROM productos")
+        total = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT COUNT(*) FROM productos WHERE estado = 'ACTIVO'")
+        activos = cursor.fetchone()[0]
+        
+        cursor.execute("SELECT AVG(porcentaje_descuento) FROM productos WHERE estado = 'ACTIVO'")
+        promedio_descuento = cursor.fetchone()[0] or 0
+        
+        conn.close()
+        return total, activos, promedio_descuento
+
+
+def main():
+    st.markdown('<div class="main-header"><h1>🛒 Sistema de Consulta de Productos</h1><p>Escanea o ingresa el código de barras</p></div>', unsafe_allow_html=True)
+    
+    # Inicializar app
+    if 'app' not in st.session_state:
+        st.session_state.app = ProductosApp()
+    
+    app = st.session_state.app
+    
+    # Sidebar para carga de datos
+    with st.sidebar:
+        st.header("📁 Carga de Datos")
+        
+        uploaded_file = st.file_uploader(
+            "Cargar archivo Excel", 
+            type=['xlsx', 'xls'],
+            help="Selecciona el archivo Excel con los datos de productos"
+        )
+        
+        if uploaded_file is not None:
+            if st.button("📥 Cargar a Base de Datos"):
+                with st.spinner("Cargando productos..."):
+                    total = app.cargar_desde_excel(uploaded_file.getvalue())
+                    st.success(f"✅ {total} productos cargados exitosamente!")
+        
+        st.divider()
+        
+        # Estadísticas
+        st.header("📊 Estadísticas")
+        total, activos, promedio_desc = app.get_stats()
+        st.metric("Total Productos", f"{total:,}")
+        st.metric("Productos Activos", f"{activos:,}")
+        st.metric("Descuento Promedio", f"{promedio_desc:.1f}%")
+        
+        st.divider()
+        
+        # Marcas destacadas
+        st.header("🏷️ Marcas Destacadas")
+        marcas = app.get_marcas_top(8)
+        for marca, total in marcas:
+            st.write(f"• {marca}: {total} productos")
+    
+    # Pestañas principales
+    tab1, tab2, tab3, tab4 = st.tabs(["🔍 Escáner", "📋 Búsqueda", "🔥 Ofertas", "ℹ️ Ayuda"])
+    
+    # Tab 1: Escáner de códigos
+    with tab1:
+        st.subheader("🔍 Escanear Código de Barras")
+        
+        col1, col2 = st.columns([3, 1])
         
         with col1:
-            st.metric("🏷️ Marca", producto['marca'])
-            if producto['descuento'] > 0:
-                st.metric("🔻 Descuento", f"{producto['descuento']:.0f}%", 
-                         delta=f"-{producto['descuento']:.0f}%", 
-                         delta_color="inverse")
-            else:
-                st.metric("🔻 Descuento", "0%")
+            codigo = st.text_input(
+                "Ingresa o escanea el código de barras:",
+                placeholder="Ej: 7709990384987",
+                key="codigo_input",
+                help="Puedes usar un lector USB o ingresar manualmente"
+            )
         
         with col2:
-            if producto['precio_original'] > 0:
-                st.metric("💰 Precio Original", f"${producto['precio_original']:,.0f}")
-            else:
-                st.metric("💰 Precio Original", "-")
-            
-            if producto['precio_final'] > 0:
-                ahorro = producto['precio_original'] - producto['precio_final']
-                if ahorro > 0:
-                    st.metric("💵 Precio Final", f"${producto['precio_final']:,.0f}", 
-                             delta=f"Ahorro: ${ahorro:,.0f}")
+            buscar = st.button("🔍 Buscar", type="primary", use_container_width=True)
+        
+        if buscar and codigo:
+            with st.spinner("Buscando producto..."):
+                producto = app.buscar_producto(codigo)
+                
+                if producto:
+                    codigo, nombre, marca, descuento, precio_orig, precio_final, estado, proveedor, categoria = producto
+                    
+                    # Mostrar resultado
+                    st.markdown(f"""
+                    <div class="product-card">
+                        <h2>📦 {nombre}</h2>
+                        <p><strong>🏷️ Marca:</strong> {marca}</p>
+                        <p><strong>🔢 Código:</strong> {codigo}</p>
+                        <p><strong>📌 Categoría:</strong> {categoria if categoria else 'No especificada'}</p>
+                        <p><strong>🏢 Proveedor:</strong> {proveedor if proveedor else 'No especificado'}</p>
+                        <p><strong>📊 Estado:</strong> {'✅ ACTIVO' if estado == 'ACTIVO' else '❌ INACTIVO'}</p>
+                        <br>
+                        <div style="text-align: center;">
+                            <span class="discount">🎯 {descuento:.0f}% DE DESCUENTO</span>
+                            <br><br>
+                            <span class="original-price">Precio original: ${precio_orig:,.0f}</span>
+                            <br>
+                            <span class="price">💰 Precio final: ${precio_final:,.0f}</span>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # Mostrar ahorro
+                    ahorro = precio_orig - precio_final
+                    if ahorro > 0:
+                        st.success(f"💸 ¡Ahorras ${ahorro:,.0f} en este producto!")
                 else:
-                    st.metric("💵 Precio Final", f"${producto['precio_final']:,.0f}")
+                    st.markdown(f"""
+                    <div class="error">
+                        ❌ No se encontró ningún producto con el código: <strong>{codigo}</strong><br>
+                        💡 Verifica que el código sea correcto o carga los datos en el sidebar.
+                    </div>
+                    """, unsafe_allow_html=True)
+        
+        # Sugerencia de códigos comunes
+        with st.expander("📋 Ver códigos de ejemplo"):
+            st.code("""
+            Códigos de ejemplo:
+            - 7709990384987 (SHOT-B MULTIVITAMINICO)
+            - 7707066043844 (PANTORRILL.NVX SPORT)
+            - 7707066043646 (PANTORRILL.NVX SPORT AGUAMA)
+            - 7509546684765 (DESOD.LADY SPEED S.MINIMIZER)
+            """)
+    
+    # Tab 2: Búsqueda por nombre
+    with tab2:
+        st.subheader("📋 Búsqueda por Nombre")
+        
+        termino = st.text_input(
+            "Ingresa el nombre del producto:",
+            placeholder="Ej: SHOT-B, VOGUE, MAYBELLINE",
+            key="search_input"
+        )
+        
+        if termino:
+            resultados = app.buscar_por_nombre(termino)
+            
+            if resultados:
+                st.write(f"🔍 Se encontraron **{len(resultados)}** productos:")
+                
+                for prod in resultados:
+                    codigo, nombre, marca, descuento, precio_orig, precio_final, estado = prod
+                    
+                    with st.container():
+                        col1, col2, col3 = st.columns([3, 1, 1])
+                        with col1:
+                            st.write(f"**{nombre}**")
+                            st.write(f"📌 {marca} | Código: {codigo}")
+                        with col2:
+                            if descuento > 0:
+                                st.write(f"🎯 {descuento:.0f}% OFF")
+                            st.write(f"💰 ${precio_final:,.0f}")
+                        with col3:
+                            if precio_orig > precio_final:
+                                st.write(f"~~${precio_orig:,.0f}~~")
+                        st.divider()
             else:
-                st.metric("💵 Precio Final", "-")
-    else:
-        st.error("❌ Producto no encontrado")
-
-# Mostrar productos cargados
-st.markdown("---")
-with st.expander("📋 Ver productos en la base de datos"):
-    conn = sqlite3.connect('productos.db')
-    df_preview = pd.read_sql_query(
-        "SELECT codigo, marca, descuento, precio_final FROM productos LIMIT 20", 
-        conn
-    )
-    conn.close()
+                st.warning(f"No se encontraron productos con: '{termino}'")
     
-    if not df_preview.empty:
-        st.dataframe(df_preview, use_container_width=True)
-    else:
-        st.info("No hay productos cargados. Por favor, carga un archivo.")
-
-# Instrucciones
-with st.expander("📖 Instrucciones para usar CSV (Recomendado)"):
-    st.markdown("""
-    ### Como convertir Excel a CSV:
+    # Tab 3: Ofertas destacadas
+    with tab3:
+        st.subheader("🔥 Productos con Mejores Descuentos")
+        
+        productos_oferta = app.get_productos_mas_descuento(20)
+        
+        if productos_oferta:
+            cols = st.columns(2)
+            for i, prod in enumerate(productos_oferta):
+                nombre, marca, descuento, precio_orig, precio_final = prod
+                
+                with cols[i % 2]:
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, #fff5e6 0%, #ffe6cc 100%); 
+                                padding: 1rem; border-radius: 10px; margin: 0.5rem 0;">
+                        <h4>🔥 {nombre[:50]}</h4>
+                        <p><strong>{marca}</strong></p>
+                        <p><span class="discount">{descuento:.0f}% DESCUENTO</span></p>
+                        <p><span class="original-price">${precio_orig:,.0f}</span> → 
+                        <span style="font-size: 1.5rem; font-weight: bold; color: #28a745;">${precio_final:,.0f}</span></p>
+                    </div>
+                    """, unsafe_allow_html=True)
+        else:
+            st.info("Carga los productos para ver las ofertas destacadas")
     
-    1. **Abre tu archivo Excel**
-    2. **Ve a Archivo > Guardar como**
-    3. **Elige "CSV UTF-8 (Comma delimited)"** 
-    4. **Guarda el archivo**
-    5. **Sube el archivo CSV a esta app**
-    
-    ### Ventajas del CSV:
-    - ✅ No necesita librerias adicionales
-    - ✅ Funciona perfectamente en Streamlit Cloud
-    - ✅ Es mas rapido de procesar
-    - ✅ Compatible con todos los sistemas
-    """)
+    # Tab 4: Ayuda
+    with tab4:
+        st.subheader("ℹ️ Instrucciones de uso")
+        
+        st.markdown("""
+        ### 📱 Cómo usar esta aplicación:
+        
+        1. **Carga de datos**:
+           - En el panel izquierdo, carga tu archivo Excel
+           - La aplicación procesará automáticamente los datos
+        
+        2. **Escaneo de códigos**:
+           - Usa un lector de códigos de barras USB
+           - O ingresa el código manualmente
+           - Presiona Enter o el botón Buscar
+        
+        3. **Búsqueda por nombre**:
+           - Escribe parte del nombre del producto
+           - Ejemplo: "VOGUE", "MAYBELLINE", "SHOT-B"
+        
+        4. **Ofertas**:
+           - Revisa los productos con mayores descuentos
+        
+        ### 🔧 Requisitos técnicos:
+        - Navegador web actualizado
+        - Conexión a internet (para Streamlit Cloud)
+        - El archivo Excel debe estar en el formato correcto
+        
+        ### 💡 Tips:
+        - Los códigos de barras pueden tener 13 dígitos
+        - Puedes configurar un lector para que envíe Enter automáticamente
+        - Los datos se guardan localmente en tu sesión
+        """)
+        
+        st.info("📌 La base de datos se mantiene durante tu sesión. Para usar datos nuevos, recarga la página y vuelve a cargar el archivo.")
 
-# Footer
-st.markdown("---")
-st.caption("Scanner de Descuentos v1.0 - Usa CSV para mejor compatibilidad")
+
+if __name__ == "__main__":
+    main()
