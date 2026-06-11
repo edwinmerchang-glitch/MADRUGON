@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import openpyxl
 
@@ -782,13 +783,117 @@ else:
             </div>
             """
 
-            # Render grid
-            st.markdown(f"""
+            # Render grid usando components.html para evitar sanitización de Streamlit
+            card_css = """
+            <style>
+            @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+            * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+            body { background: transparent; }
+            .result-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 20px;
+                padding: 4px;
+            }
+            @media (max-width: 600px) { .result-grid { grid-template-columns: 1fr; } }
+            .discount-card {
+                background: linear-gradient(145deg, #FF5F57 0%, #FF8C42 100%);
+                border-radius: 20px;
+                padding: 32px;
+                color: white;
+                position: relative;
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+                min-height: 220px;
+            }
+            .discount-card::before {
+                content: '';
+                position: absolute;
+                top: -30px; right: -30px;
+                width: 160px; height: 160px;
+                background: rgba(255,255,255,0.08);
+                border-radius: 50%;
+            }
+            .discount-card::after {
+                content: '';
+                position: absolute;
+                bottom: -50px; left: -20px;
+                width: 200px; height: 200px;
+                background: rgba(255,255,255,0.05);
+                border-radius: 50%;
+            }
+            .dc-eyebrow { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1.5px; opacity: 0.8; }
+            .dc-pct { font-size: 88px; font-weight: 900; line-height: 1; letter-spacing: -4px; position: relative; z-index: 1; }
+            .dc-pct sup { font-size: 32px; letter-spacing: 0; vertical-align: super; }
+            .dc-label { font-size: 18px; font-weight: 700; opacity: 0.9; }
+            .dc-savings {
+                background: rgba(255,255,255,0.2);
+                border-radius: 10px;
+                padding: 10px 16px;
+                font-size: 14px;
+                font-weight: 600;
+                display: inline-block;
+                position: relative;
+                z-index: 1;
+                margin-top: 12px;
+            }
+            .no-discount-card {
+                background: #F1F5F9;
+                border-radius: 20px;
+                padding: 32px;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                text-align: center;
+                min-height: 220px;
+                color: #94A3B8;
+            }
+            .no-discount-icon { font-size: 40px; margin-bottom: 12px; }
+            .no-discount-text { font-size: 16px; font-weight: 600; color: #64748B; }
+            .info-card {
+                background: white;
+                border-radius: 20px;
+                padding: 28px;
+                box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+                border: 1px solid #F1F5F9;
+                display: flex;
+                flex-direction: column;
+                gap: 18px;
+            }
+            .product-name { font-size: 18px; font-weight: 700; color: #0F172A; line-height: 1.35; }
+            .product-brand {
+                display: inline-flex; align-items: center; gap: 6px;
+                background: #F8FAFC; border: 1px solid #E2E8F0;
+                padding: 4px 12px; border-radius: 20px;
+                font-size: 13px; font-weight: 500; color: #475569;
+                margin-top: 8px;
+            }
+            .status-pill { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; margin-top: 6px; }
+            .status-activo { background: #DCFCE7; color: #16A34A; }
+            .status-pasivo { background: #FEF2F2; color: #DC2626; }
+            .divider { height: 1px; background: #F1F5F9; }
+            .price-row { display: flex; gap: 16px; align-items: flex-start; }
+            .price-block { flex: 1; }
+            .price-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #94A3B8; margin-bottom: 4px; }
+            .price-original { font-size: 20px; font-weight: 600; color: #CBD5E1; text-decoration: line-through; }
+            .price-discounted { font-size: 30px; font-weight: 800; color: #FF5F57; letter-spacing: -1px; }
+            .price-same { font-size: 28px; font-weight: 800; color: #0F172A; letter-spacing: -1px; }
+            .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+            .meta-item { background: #F8FAFC; border-radius: 10px; padding: 10px 14px; }
+            .meta-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: #94A3B8; margin-bottom: 3px; }
+            .meta-value { font-size: 14px; font-weight: 600; color: #334155; word-break: break-all; }
+            </style>
+            """
+            components.html(f"""
+            {card_css}
             <div class="result-grid">
               {discount_card}
               {info_card}
             </div>
-            """, unsafe_allow_html=True)
+            """, height=300, scrolling=False)
 
             # Múltiples resultados
             if len(resultado) > 1:
