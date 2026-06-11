@@ -1,524 +1,812 @@
 import streamlit as st
 import pandas as pd
-import os
+import openpyxl
 
 st.set_page_config(
-    page_title="Consulta de Descuentos",
-    page_icon="🛒",
+    page_title="Madrugón — Descuentos",
+    page_icon="🏷️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# ============ CSS PERSONALIZADO ============
+# ============ ESTILOS ============
 st.markdown("""
 <style>
-    .main {
-        padding: 0rem 1rem;
-    }
-    
-    .descuento-container {
-        background: linear-gradient(135deg, #FF416C, #FF4B2B);
-        color: white;
-        padding: 30px;
-        border-radius: 20px;
-        text-align: center;
-        margin: 20px 0;
-        box-shadow: 0 10px 30px rgba(255, 65, 108, 0.3);
-    }
-    .porcentaje-descuento {
-        font-size: 80px;
-        font-weight: 900;
-        line-height: 1;
-        margin: 10px 0;
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-        animation: pulse 2s infinite;
-    }
-    .texto-descuento {
-        font-size: 24px;
-        font-weight: 600;
-    }
-    
-    @keyframes pulse {
-        0% { transform: scale(1); }
-        50% { transform: scale(1.05); }
-        100% { transform: scale(1); }
-    }
-    
-    .producto-card {
-        background: white;
-        border-radius: 15px;
-        padding: 25px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        margin: 20px 0;
-    }
-    .producto-nombre {
-        font-size: 24px;
-        font-weight: 700;
-        color: #1a1a1a;
-        margin-bottom: 20px;
-        text-align: center;
-    }
-    .producto-marca {
-        font-size: 16px;
-        color: #666;
-        text-align: center;
-        margin-bottom: 20px;
-        background: #f0f0f0;
-        padding: 5px 15px;
-        border-radius: 20px;
-        display: inline-block;
-    }
-    
-    .precio-container {
-        background: #f8f9fa;
-        border-radius: 15px;
-        padding: 20px;
-        margin-top: 20px;
-    }
-    .precio-original {
-        text-decoration: line-through;
-        color: #999;
-        font-size: 20px;
-    }
-    .precio-descuento {
-        color: #FF416C;
-        font-size: 32px;
-        font-weight: 700;
-    }
-    .precio-label {
-        font-size: 14px;
-        color: #666;
-        margin-bottom: 5px;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-    
-    .ahorro-badge {
-        display: inline-block;
-        background: #4CAF50;
-        color: white;
-        padding: 8px 20px;
-        border-radius: 25px;
-        font-weight: 600;
-        margin-top: 10px;
-    }
-    
-    .status-card {
-        background: white;
-        border-radius: 10px;
-        padding: 15px;
-        margin: 10px 0;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-    }
-    .status-title {
-        font-size: 12px;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        color: #999;
-    }
-    .status-value {
-        font-size: 20px;
-        font-weight: 700;
-        color: #1a1a1a;
-    }
-    
-    .search-container {
-        background: white;
-        border-radius: 15px;
-        padding: 20px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-        margin: 20px 0;
-    }
-    
-    @media (max-width: 768px) {
-        .porcentaje-descuento {
-            font-size: 60px;
-        }
-        .producto-nombre {
-            font-size: 20px;
-        }
-    }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif;
+}
+
+/* Reset Streamlit defaults */
+.main .block-container {
+    padding: 0 !important;
+    max-width: 100% !important;
+}
+section[data-testid="stSidebar"] { display: none; }
+header[data-testid="stHeader"] { display: none; }
+footer { display: none; }
+
+/* ---- LAYOUT SHELL ---- */
+.app-shell {
+    min-height: 100vh;
+    background: #F5F6FA;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ---- TOP BAR ---- */
+.topbar {
+    background: #0F172A;
+    padding: 0 32px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+.topbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+.topbar-logo {
+    width: 36px;
+    height: 36px;
+    background: linear-gradient(135deg, #FF5F57 0%, #FF8C42 100%);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+}
+.topbar-name {
+    color: white;
+    font-weight: 700;
+    font-size: 18px;
+    letter-spacing: -0.3px;
+}
+.topbar-sub {
+    color: #64748B;
+    font-size: 13px;
+    font-weight: 400;
+}
+.topbar-badge {
+    background: #1E293B;
+    color: #94A3B8;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+}
+.topbar-badge span {
+    color: #38BDF8;
+    font-weight: 700;
+}
+
+/* ---- UPLOAD SCREEN ---- */
+.upload-screen {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+}
+.upload-card {
+    background: white;
+    border-radius: 24px;
+    padding: 60px 48px;
+    text-align: center;
+    max-width: 480px;
+    width: 100%;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+    border: 1px solid #E2E8F0;
+}
+.upload-icon {
+    width: 80px;
+    height: 80px;
+    background: linear-gradient(135deg, #EFF6FF, #DBEAFE);
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 36px;
+    margin: 0 auto 24px;
+}
+.upload-title {
+    font-size: 24px;
+    font-weight: 700;
+    color: #0F172A;
+    margin-bottom: 10px;
+}
+.upload-sub {
+    color: #64748B;
+    font-size: 15px;
+    line-height: 1.6;
+    margin-bottom: 32px;
+}
+
+/* ---- SEARCH SCREEN ---- */
+.search-screen {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+.search-hero {
+    background: linear-gradient(135deg, #0F172A 0%, #1E3A5F 100%);
+    padding: 40px 32px 48px;
+}
+.search-hero-title {
+    color: white;
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+    margin-bottom: 6px;
+}
+.search-hero-sub {
+    color: #94A3B8;
+    font-size: 15px;
+    margin-bottom: 28px;
+}
+.search-box-wrap {
+    position: relative;
+    max-width: 640px;
+}
+.search-icon-abs {
+    position: absolute;
+    left: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 18px;
+    z-index: 1;
+    pointer-events: none;
+}
+
+/* Override Streamlit input */
+.search-box-wrap .stTextInput > div > div > input {
+    background: white !important;
+    border: none !important;
+    border-radius: 14px !important;
+    padding: 16px 20px 16px 52px !important;
+    font-size: 16px !important;
+    font-weight: 500 !important;
+    color: #0F172A !important;
+    height: 56px !important;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2) !important;
+}
+.search-box-wrap .stTextInput > div > div > input:focus {
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2), 0 0 0 3px rgba(56,189,248,0.4) !important;
+    outline: none !important;
+}
+.search-box-wrap .stTextInput label { display: none !important; }
+.search-box-wrap .stTextInput > div { padding: 0 !important; }
+
+/* ---- RESULTS AREA ---- */
+.results-area {
+    padding: 32px;
+    flex: 1;
+}
+
+/* ---- EMPTY STATE ---- */
+.empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #94A3B8;
+}
+.empty-state-icon { font-size: 48px; margin-bottom: 16px; }
+.empty-state-title { font-size: 18px; font-weight: 600; color: #64748B; margin-bottom: 8px; }
+.empty-state-sub { font-size: 14px; }
+
+/* ---- NOT FOUND ---- */
+.not-found {
+    background: #FFF1F2;
+    border: 1px solid #FFE4E6;
+    border-radius: 16px;
+    padding: 32px;
+    text-align: center;
+    max-width: 480px;
+    margin: 0 auto;
+}
+.not-found-icon { font-size: 40px; margin-bottom: 12px; }
+.not-found-title { font-size: 18px; font-weight: 700; color: #BE123C; margin-bottom: 8px; }
+.not-found-sub { color: #64748B; font-size: 14px; }
+
+/* ---- PRODUCT RESULT ---- */
+.result-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    max-width: 960px;
+    margin: 0 auto;
+}
+@media (max-width: 700px) {
+    .result-grid { grid-template-columns: 1fr; }
+    .results-area { padding: 16px; }
+    .search-hero { padding: 24px 16px 32px; }
+}
+
+/* MAIN DISCOUNT CARD */
+.discount-card {
+    background: linear-gradient(145deg, #FF5F57 0%, #FF8C42 100%);
+    border-radius: 20px;
+    padding: 32px;
+    color: white;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 220px;
+}
+.discount-card::before {
+    content: '';
+    position: absolute;
+    top: -30px; right: -30px;
+    width: 160px; height: 160px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 50%;
+}
+.discount-card::after {
+    content: '';
+    position: absolute;
+    bottom: -50px; left: -20px;
+    width: 200px; height: 200px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 50%;
+}
+.dc-eyebrow {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    opacity: 0.8;
+}
+.dc-pct {
+    font-size: 88px;
+    font-weight: 900;
+    line-height: 1;
+    letter-spacing: -4px;
+    position: relative;
+    z-index: 1;
+}
+.dc-pct sup {
+    font-size: 32px;
+    letter-spacing: 0;
+    vertical-align: super;
+}
+.dc-label {
+    font-size: 18px;
+    font-weight: 700;
+    opacity: 0.9;
+}
+.dc-savings {
+    background: rgba(255,255,255,0.2);
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    display: inline-block;
+    position: relative;
+    z-index: 1;
+    margin-top: 12px;
+}
+
+/* No discount */
+.no-discount-card {
+    background: #F1F5F9;
+    border-radius: 20px;
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    min-height: 220px;
+    color: #94A3B8;
+}
+.no-discount-icon { font-size: 40px; margin-bottom: 12px; }
+.no-discount-text { font-size: 16px; font-weight: 600; color: #64748B; }
+
+/* PRODUCT INFO CARD */
+.info-card {
+    background: white;
+    border-radius: 20px;
+    padding: 28px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+    border: 1px solid #F1F5F9;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+.product-name {
+    font-size: 20px;
+    font-weight: 700;
+    color: #0F172A;
+    line-height: 1.3;
+}
+.product-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #475569;
+}
+.price-row {
+    display: flex;
+    gap: 16px;
+    align-items: flex-end;
+}
+.price-block { flex: 1; }
+.price-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #94A3B8;
+    margin-bottom: 4px;
+}
+.price-original {
+    font-size: 22px;
+    font-weight: 600;
+    color: #CBD5E1;
+    text-decoration: line-through;
+}
+.price-discounted {
+    font-size: 32px;
+    font-weight: 800;
+    color: #FF5F57;
+    letter-spacing: -1px;
+}
+.price-same {
+    font-size: 28px;
+    font-weight: 800;
+    color: #0F172A;
+    letter-spacing: -1px;
+}
+.divider { height: 1px; background: #F1F5F9; }
+.meta-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+.meta-item {
+    background: #F8FAFC;
+    border-radius: 10px;
+    padding: 10px 14px;
+}
+.meta-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #94A3B8;
+    margin-bottom: 3px;
+}
+.meta-value {
+    font-size: 14px;
+    font-weight: 600;
+    color: #334155;
+    word-break: break-all;
+}
+.status-pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+}
+.status-activo { background: #DCFCE7; color: #16A34A; }
+.status-pasivo { background: #FEF2F2; color: #DC2626; }
+
+/* DEBUG SECTION */
+.debug-wrap {
+    margin-top: 24px;
+    max-width: 960px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* Streamlit expander override */
+.streamlit-expanderHeader {
+    font-size: 13px !important;
+    color: #64748B !important;
+}
+
+/* Stats bar */
+.stats-bar {
+    background: #1E293B;
+    padding: 10px 32px;
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+}
+.stat-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.stat-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+}
+.stat-dot-green { background: #22C55E; }
+.stat-dot-blue { background: #38BDF8; }
+.stat-text {
+    font-size: 13px;
+    color: #64748B;
+}
+.stat-text span { color: #E2E8F0; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
-# ============ INICIALIZAR ESTADO ============
-if 'datos_cargados' not in st.session_state:
-    st.session_state.datos_cargados = False
+
+# ============ ESTADO ============
 if 'df' not in st.session_state:
     st.session_state.df = None
-if 'nombre_archivo' not in st.session_state:
-    st.session_state.nombre_archivo = ""
-if 'total_productos' not in st.session_state:
-    st.session_state.total_productos = 0
-if 'modo_debug' not in st.session_state:
-    st.session_state.modo_debug = False
+if 'meta' not in st.session_state:
+    st.session_state.meta = {}
+if 'debug' not in st.session_state:
+    st.session_state.debug = False
 
-# ============ FUNCIONES ============
 
+# ============ CARGA DE DATOS ============
 @st.cache_data
-def cargar_datos(archivo):
-    """Carga y procesa el archivo Excel"""
-    try:
-        # Detectar nombre de hoja automáticamente
-        import openpyxl
-        wb = openpyxl.load_workbook(archivo, read_only=True)
-        hoja = wb.sheetnames[0]  # Tomar la primera hoja disponible
-        wb.close()
+def cargar_excel(archivo):
+    wb = openpyxl.load_workbook(archivo, read_only=True)
+    hoja = wb.sheetnames[0]
+    # Leer fila 0 para detectar días de descuento
+    ws = wb[hoja]
+    fila0 = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+    dias_descuento = [v for v in fila0 if v and isinstance(v, str) and 'DESCUENTO' in v.upper()]
+    wb.close()
 
-        # El archivo tiene una fila de título en fila 0 y encabezados en fila 1
-        df = pd.read_excel(archivo, sheet_name=hoja, header=1)
-        
-        # Convertir columnas de código a string
-        for col in df.columns:
-            col_lower = col.strip().lower()
-            if any(keyword in col_lower for keyword in ['ean', 'código', 'codigo', 'code']):
-                df[col] = df[col].astype(str).str.strip()
-        
-        return df
-    except Exception as e:
-        st.error(f"Error al leer el archivo: {e}")
-        return None
+    df = pd.read_excel(archivo, sheet_name=hoja, header=1)
+    df.columns = [str(c).strip() for c in df.columns]
 
-def obtener_info_producto(fila):
-    """
-    Extrae información del producto con lógica mejorada para distinguir
-    entre porcentajes y precios reales
-    """
-    info = {
-        'nombre': None,
-        'precio_venta': None,
-        'precio_descuento': None,
-        'marca': None,
-        'porcentaje_descuento': None
+    # Renombrar columnas duplicadas (PVP, DCTO, PVP CON DESUENTO aparecen dos veces)
+    seen = {}
+    new_cols = []
+    for col in df.columns:
+        if col in seen:
+            seen[col] += 1
+            new_cols.append(f"{col}_{seen[col]}")
+        else:
+            seen[col] = 0
+            new_cols.append(col)
+    df.columns = new_cols
+
+    # Convertir EAN a string
+    for col in df.columns:
+        if 'EAN' in col.upper() or 'CODIGO' in col.upper():
+            df[col] = df[col].astype(str).str.strip().str.split('.').str[0]
+
+    total = len(df)
+    activos = int((df['ESTADO'].str.upper() == 'ACTIVO').sum()) if 'ESTADO' in df.columns else 0
+    meta = {
+        'hoja': hoja,
+        'total': total,
+        'activos': activos,
+        'dias': dias_descuento
     }
-    
-    # Primero, identificar el porcentaje de descuento (valor pequeño, generalmente ≤ 100)
-    for col in fila.index:
-        col_lower = col.strip().lower()
-        valor = fila[col]
-        
-        if pd.isna(valor) or str(valor).strip() == '':
-            continue
-        
-        # Buscar específicamente columnas de porcentaje
-        if any(kw in col_lower for kw in ['porcentaje', '%', 'dscto', 'dcto']) and \
-           not any(kw in col_lower for kw in ['precio', 'venta', 'valor', 'con']):
+    return df, meta
+
+
+def buscar_producto(df, codigo):
+    mascara = pd.Series(False, index=df.index)
+    for col in df.columns:
+        cu = col.upper()
+        if any(k in cu for k in ['EAN', 'CODIGO', 'SAP']):
             try:
-                valor_float = float(str(valor).replace('%', '').replace(',', '.').strip())
-                # Si el valor es pequeño (0-100), es un porcentaje
-                if 0 < valor_float <= 100:
-                    if valor_float <= 1:
-                        info['porcentaje_descuento'] = valor_float * 100
-                    else:
-                        info['porcentaje_descuento'] = valor_float
-                    continue  # Ya encontramos el porcentaje, seguir con otros campos
+                mascara |= (df[col].astype(str).str.strip() == codigo.strip())
             except:
                 pass
-    
-    # Ahora buscar precios (valores grandes, típicamente > 1000)
-    for col in fila.index:
-        col_lower = col.strip().lower()
-        valor = fila[col]
-        
-        if pd.isna(valor) or str(valor).strip() == '':
-            continue
-        
-        try:
-            # Intentar convertir a número
-            valor_str = str(valor).replace('$', '').replace(',', '').strip()
-            valor_float = float(valor_str)
-            
-            # Ignorar valores que son claramente porcentajes (≤ 100)
-            if valor_float <= 100 and any(kw in col_lower for kw in ['%', 'porcentaje', 'descuento']):
-                continue
-            
-            # Ignorar códigos (generalmente son strings muy largos)
-            if valor_float > 100000000:  # Más de 100 millones, probablemente un código
-                continue
-            
-            # Detectar precio original
-            if info['precio_venta'] is None:
-                if any(kw in col_lower for kw in ['pvp', 'precio', 'venta']) and \
-                   not any(kw in col_lower for kw in ['descuento', 'desuento', 'final', 'dscto', 'dcto', 'oferta', 'especial', 'con']):
-                    if valor_float > 100:  # Asumimos que precios son > 100
-                        info['precio_venta'] = valor_float
-                        continue
-            
-            # Detectar precio con descuento
-            if info['precio_descuento'] is None:
-                if any(kw in col_lower for kw in ['pvp', 'precio']) and \
-                   any(kw in col_lower for kw in ['descuento', 'desuento', 'final', 'dscto', 'dcto', 'oferta', 'especial', 'con']):
-                    if valor_float > 100:  # Asumimos que precios son > 100
-                        info['precio_descuento'] = valor_float
-                        continue
-            
-        except (ValueError, TypeError):
-            # No es un número, podría ser nombre o marca
-            pass
-    
-    # Buscar nombre del producto (texto que no sea número)
-    for col in fila.index:
-        col_lower = col.strip().lower()
-        valor = fila[col]
-        
-        if pd.isna(valor) or str(valor).strip() == '':
-            continue
-        
-        # Solo buscar nombre en columnas que no son de precios/códigos
-        if not any(kw in col_lower for kw in ['precio', 'pvp', 'descuento', 'desuento', 'ean', 'codigo', 'supplier', 
-                                                'day', 'linea', 'estado', 'number', 'número', 'nit', 'proveedor', 'dcto', 'sap']):
-            try:
-                float(str(valor).replace('$', '').replace(',', ''))
-            except:
-                if info['nombre'] is None:
-                    # Verificar que el valor tenga al menos 3 caracteres y contenga letras
-                    valor_str = str(valor).strip()
-                    if len(valor_str) > 3 and any(c.isalpha() for c in valor_str):
-                        info['nombre'] = valor_str
-        
-        # Buscar marca
-        if info['marca'] is None:
-            if any(kw in col_lower for kw in ['marca', 'brand']):
-                info['marca'] = str(valor).strip()
-    
-    # Si no se encontró precio con descuento pero tenemos precio original y porcentaje
-    if info['precio_descuento'] is None and info['precio_venta'] and info['porcentaje_descuento']:
-        descuento_decimal = info['porcentaje_descuento'] / 100
-        info['precio_descuento'] = info['precio_venta'] * (1 - descuento_decimal)
-    
-    # Si no se encontró porcentaje pero tenemos ambos precios
-    if info['porcentaje_descuento'] is None and info['precio_venta'] and info['precio_descuento']:
-        if info['precio_venta'] > info['precio_descuento']:
-            info['porcentaje_descuento'] = ((info['precio_venta'] - info['precio_descuento']) / 
-                                           info['precio_venta']) * 100
-    
-    return info
+    return df[mascara]
 
-def mostrar_producto(info):
-    """Muestra la información del producto formateada"""
-    
-    # Contenedor de descuento
-    if info['porcentaje_descuento'] and info['porcentaje_descuento'] > 0:
-        st.markdown(f"""
-        <div class="descuento-container">
-            <div class="texto-descuento">🔥 ¡AHORRA!</div>
-            <div class="porcentaje-descuento">{info['porcentaje_descuento']:.0f}%</div>
-            <div class="texto-descuento">DE DESCUENTO</div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Tarjeta del producto
-    st.markdown('<div class="producto-card">', unsafe_allow_html=True)
-    
-    # Nombre
-    if info['nombre']:
-        st.markdown(f'<div class="producto-nombre">{info["nombre"]}</div>', unsafe_allow_html=True)
-    
-    # Marca
-    if info['marca']:
-        st.markdown(f'<div style="text-align: center;"><span class="producto-marca">🏷️ {info["marca"]}</span></div>', 
-                   unsafe_allow_html=True)
-    
-    # Precios
-    if info['precio_venta'] or info['precio_descuento']:
-        st.markdown('<div class="precio-container">', unsafe_allow_html=True)
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown('<div class="precio-label">Precio Original</div>', unsafe_allow_html=True)
-            if info['precio_venta']:
-                st.markdown(f'<div class="precio-original">${info["precio_venta"]:,.0f}</div>', 
-                          unsafe_allow_html=True)
-            else:
-                st.markdown('<div style="color: #999;">No disponible</div>', unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown('<div class="precio-label">Precio con Descuento</div>', unsafe_allow_html=True)
-            if info['precio_descuento']:
-                st.markdown(f'<div class="precio-descuento">${info["precio_descuento"]:,.0f}</div>', 
-                          unsafe_allow_html=True)
-            else:
-                st.markdown('<div style="color: #999;">No disponible</div>', unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Ahorro
-    if info['precio_venta'] and info['precio_descuento']:
-        ahorro = info['precio_venta'] - info['precio_descuento']
-        if ahorro > 0:
-            st.markdown(f'''
-            <div style="text-align: center; margin-top: 15px;">
-                <span class="ahorro-badge">💰 Te ahorras: ${ahorro:,.0f}</span>
-            </div>
-            ''', unsafe_allow_html=True)
-    
+
+def extraer_info(fila, df_cols):
+    cols = {c.upper(): c for c in df_cols}
+
+    def v(key_parts, exclude=None):
+        for k, real in cols.items():
+            if any(p in k for p in key_parts):
+                if exclude and any(e in k for e in exclude):
+                    continue
+                val = fila[real]
+                if not pd.isna(val) and str(val).strip() not in ('', 'nan'):
+                    return val
+        return None
+
+    nombre = v(['NOMBRE'], exclude=['PROVEEDOR'])
+    marca  = v(['PROVEEDOR', 'MARCA', 'BRAND'], exclude=['NIT', 'NUMERO', 'NUMBER'])
+    estado = v(['ESTADO'])
+    ean    = fila.get(cols.get('EAN', ''), None)
+    sap    = fila.get(cols.get('CODIGO SAP', ''), None)
+
+    # Precios: tomar PVP base (primer PVP sin sufijo) y PVP CON DESUENTO
+    pvp_base = None
+    pvp_desc = None
+    dcto_pct = None
+
+    for c in df_cols:
+        cu = c.upper()
+        val = fila[c]
+        if pd.isna(val): continue
+        try:
+            n = float(str(val).replace(',', '.').replace('%', '').strip())
+        except:
+            continue
+
+        if cu == 'PVP' and pvp_base is None and n > 100:
+            pvp_base = n
+        if 'PVP CON' in cu and pvp_desc is None and n > 100:
+            pvp_desc = n
+        if 'DCTO' in cu and dcto_pct is None and 0 < n <= 1:
+            dcto_pct = round(n * 100, 1)
+
+    # Calcular descuento si falta
+    if dcto_pct is None and pvp_base and pvp_desc and pvp_base > pvp_desc:
+        dcto_pct = round((pvp_base - pvp_desc) / pvp_base * 100, 1)
+
+    if pvp_desc is None and pvp_base and dcto_pct:
+        pvp_desc = round(pvp_base * (1 - dcto_pct / 100), 0)
+
+    return {
+        'nombre': str(nombre).strip() if nombre else 'Sin nombre',
+        'marca':  str(marca).strip() if marca else None,
+        'estado': str(estado).strip().upper() if estado else None,
+        'ean':    str(ean).split('.')[0] if ean else None,
+        'sap':    str(sap).split('.')[0] if sap else None,
+        'pvp':    pvp_base,
+        'pvp_desc': pvp_desc,
+        'dcto':   dcto_pct,
+        'ahorro': round(pvp_base - pvp_desc, 0) if pvp_base and pvp_desc else None
+    }
+
+
+# ============ TOP BAR ============
+df = st.session_state.df
+meta = st.session_state.meta
+
+loaded = df is not None
+
+badge_html = ""
+if loaded:
+    badge_html = f'<div class="topbar-badge">📦 <span>{meta["total"]:,}</span> productos cargados</div>'
+else:
+    badge_html = '<div class="topbar-badge">Sin datos</div>'
+
+st.markdown(f"""
+<div class="topbar">
+  <div class="topbar-brand">
+    <div class="topbar-logo">🏷️</div>
+    <div>
+      <div class="topbar-name">Madrugón</div>
+      <div class="topbar-sub">Consulta de descuentos</div>
+    </div>
+  </div>
+  {badge_html}
+</div>
+""", unsafe_allow_html=True)
+
+
+# ============ STATS BAR (cuando hay datos) ============
+if loaded:
+    dias_str = ' · '.join(meta['dias']) if meta['dias'] else 'Sin días definidos'
+    st.markdown(f"""
+    <div class="stats-bar">
+      <div class="stat-item">
+        <div class="stat-dot stat-dot-green"></div>
+        <div class="stat-text"><span>{meta['activos']:,}</span> activos</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-dot stat-dot-blue"></div>
+        <div class="stat-text"><span>{meta['total'] - meta['activos']:,}</span> pasivos</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-text">📅 {dias_str}</div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ============ PANTALLA: SIN DATOS ============
+if not loaded:
+    st.markdown('<div class="upload-screen">', unsafe_allow_html=True)
+    st.markdown("""
+    <div class="upload-card">
+      <div class="upload-icon">📊</div>
+      <div class="upload-title">Cargar archivo de datos</div>
+      <div class="upload-sub">Sube el archivo Excel del Madrugón para comenzar a consultar descuentos por código de barras.</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    uploaded = st.file_uploader("", type=["xlsx", "xls"], label_visibility="collapsed")
+
+    if uploaded:
+        with st.spinner("Procesando archivo..."):
+            try:
+                df_loaded, meta_loaded = cargar_excel(uploaded)
+                st.session_state.df = df_loaded
+                st.session_state.meta = meta_loaded
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error al cargar el archivo: {e}")
+
     st.markdown('</div>', unsafe_allow_html=True)
 
-# ============ SIDEBAR ============
-with st.sidebar:
-    st.title("🛒 Descuentos App")
-    st.markdown("---")
-    
-    # Carga de archivo
-    st.header("📂 Datos")
-    
-    archivo_subido = st.file_uploader(
-        "Cargar archivo Excel",
-        type=["xlsx", "xls"],
-        help="Selecciona el archivo con los datos de productos"
-    )
-    
-    if archivo_subido is not None:
-        with st.spinner("Procesando..."):
-            df = cargar_datos(archivo_subido)
-            if df is not None and not df.empty:
-                st.session_state.df = df
-                st.session_state.datos_cargados = True
-                st.session_state.nombre_archivo = archivo_subido.name
-                st.session_state.total_productos = len(df)
-                st.success("✅ Archivo cargado!")
-    
-    st.markdown("---")
-    
-    # Estado
-    st.header("📊 Estado")
-    
-    if st.session_state.datos_cargados:
-        st.markdown(f"""
-        <div class="status-card">
-            <div class="status-title">Archivo</div>
-            <div class="status-value" style="font-size: 14px;">{st.session_state.nombre_archivo}</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown(f"""
-        <div class="status-card">
-            <div class="status-title">Productos</div>
-            <div class="status-value">{st.session_state.total_productos:,}</div>
+
+# ============ PANTALLA: BÚSQUEDA ============
+else:
+    # Hero + input
+    st.markdown("""
+    <div class="search-hero">
+      <div class="search-hero-title">¿Qué producto buscas?</div>
+      <div class="search-hero-sub">Escanea o escribe el código EAN o código SAP del producto</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Input field — dentro de wrapper para CSS
+    col_inp, col_act = st.columns([6, 1])
+    with col_inp:
+        st.markdown('<div class="search-box-wrap"><span class="search-icon-abs">🔍</span>', unsafe_allow_html=True)
+        codigo = st.text_input("Código", key="codigo", label_visibility="collapsed",
+                               placeholder="Escanea o escribe el código de barras...")
+        st.markdown('</div>', unsafe_allow_html=True)
+    with col_act:
+        limpiar = st.button("🗑 Nuevo", use_container_width=True)
+        if limpiar:
+            st.session_state.df = None
+            st.session_state.meta = {}
+            st.rerun()
+
+    # ---- RESULTADOS ----
+    st.markdown('<div class="results-area">', unsafe_allow_html=True)
+
+    if not codigo:
+        st.markdown("""
+        <div class="empty-state">
+          <div class="empty-state-icon">🏷️</div>
+          <div class="empty-state-title">Listo para buscar</div>
+          <div class="empty-state-sub">Ingresa un código para ver el precio y descuento del producto</div>
         </div>
         """, unsafe_allow_html=True)
     else:
-        st.info("Sin archivo cargado")
-    
-    st.markdown("---")
-    
-    # Opciones
-    st.header("⚙️ Opciones")
-    
-    st.session_state.modo_debug = st.checkbox("Modo diagnóstico", value=False)
-    
-    if st.session_state.datos_cargados:
-        if st.button("🗑️ Limpiar datos", use_container_width=True):
-            st.session_state.datos_cargados = False
-            st.session_state.df = None
-            st.session_state.nombre_archivo = ""
-            st.session_state.total_productos = 0
-            st.rerun()
-    
-    st.markdown("---")
-    
-    with st.expander("ℹ️ Información"):
-        st.write("""
-        **App de Consulta de Descuentos**
-        
-        Versión: 2.0
-        
-        Carga un archivo Excel y busca productos por código de barras.
-        """)
+        resultado = buscar_producto(df, codigo)
 
-# ============ CONTENIDO PRINCIPAL ============
-
-st.title("🔍 Consulta de Productos")
-st.caption("Escanea o ingresa un código de barras para ver descuentos")
-
-if not st.session_state.datos_cargados:
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.markdown("""
-        <div style="text-align: center; padding: 50px 20px;">
-            <div style="font-size: 80px; margin-bottom: 20px;">📤</div>
-            <h2>Sin archivo de datos</h2>
-            <p style="color: #666; font-size: 16px;">
-                Para comenzar, carga un archivo Excel usando el panel lateral izquierdo.
-            </p>
-            <div style="background: #f0f0f0; padding: 15px; border-radius: 10px; margin-top: 20px;">
-                <p style="margin: 0; color: #999; font-size: 14px;">
-                    ⬅️ Usa el menú lateral para cargar tus datos
-                </p>
+        if resultado.empty:
+            st.markdown(f"""
+            <div class="not-found">
+              <div class="not-found-icon">🔎</div>
+              <div class="not-found-title">Producto no encontrado</div>
+              <div class="not-found-sub">No hay resultados para el código <strong>{codigo}</strong>.<br>Verifica que el código sea correcto e inténtalo de nuevo.</div>
             </div>
-        </div>
-        """, unsafe_allow_html=True)
-else:
-    # Buscador
-    st.markdown('<div class="search-container">', unsafe_allow_html=True)
-    
-    col1, col2 = st.columns([4, 1])
-    
-    with col1:
-        codigo = st.text_input(
-            "",
-            placeholder="🔍 Escanea o escribe el código de barras del producto...",
-            key="codigo_input",
-            label_visibility="collapsed"
-        )
-    
-    with col2:
-        buscar = st.button("🔍 Buscar", type="primary", use_container_width=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Resultados
-    if codigo or buscar:
-        if codigo:
-            codigo = codigo.strip()
-            df = st.session_state.df
-            
-            # Búsqueda
-            mascara = pd.Series(False, index=df.index)
-            for col in df.columns:
-                col_lower = col.strip().lower()
-                if any(kw in col_lower for kw in ['ean', 'código', 'codigo', 'code', 'barras', 'sap']):
-                    try:
-                        mascara |= (df[col].astype(str).str.strip() == codigo)
-                    except:
-                        pass
-            
-            resultado = df[mascara]
-            
-            if not resultado.empty:
-                fila = resultado.iloc[0]
-                
-                # Obtener y mostrar información
-                info_producto = obtener_info_producto(fila)
-                mostrar_producto(info_producto)
-                
-                # Debug
-                if st.session_state.modo_debug:
-                    with st.expander("🔧 Diagnóstico"):
-                        st.write("**Información detectada:**")
-                        st.json(info_producto)
-                        st.write("**Datos completos de la fila:**")
-                        st.dataframe(pd.DataFrame([fila]), use_container_width=True)
-                
-                # Múltiples resultados
-                if len(resultado) > 1:
-                    with st.expander(f"📋 {len(resultado)} coincidencias"):
-                        st.dataframe(resultado, use_container_width=True, hide_index=True)
-            
-            else:
-                st.error("❌ Producto no encontrado")
-                
-                with st.expander("💡 Ayuda"):
-                    st.write("**Primeros productos en la base:**")
-                    st.dataframe(df.head(5), use_container_width=True)
+            """, unsafe_allow_html=True)
         else:
-            st.warning("⚠️ Ingresa un código para buscar")
+            fila = resultado.iloc[0]
+            info = extraer_info(fila, df.columns.tolist())
 
-# Footer
-st.markdown("---")
-st.markdown(
-    "<p style='text-align: center; color: #999; font-size: 12px;'>"
-    "App de Consulta de Descuentos v1.0 | Desarrollado por Edwin Merchán</p>",
-    unsafe_allow_html=True
-)
+            # ---- TARJETA DESCUENTO ----
+            if info['dcto'] and info['dcto'] > 0:
+                ahorro_html = ""
+                if info['ahorro']:
+                    ahorro_html = f'<div class="dc-savings">💰 Ahorras ${info["ahorro"]:,.0f}</div>'
+                discount_card = f"""
+                <div class="discount-card">
+                  <div>
+                    <div class="dc-eyebrow">🔥 Descuento especial</div>
+                    <div class="dc-pct"><sup>-</sup>{info['dcto']:.0f}<sup>%</sup></div>
+                    <div class="dc-label">DE DESCUENTO</div>
+                  </div>
+                  {ahorro_html}
+                </div>
+                """
+            else:
+                discount_card = """
+                <div class="no-discount-card">
+                  <div class="no-discount-icon">🏷️</div>
+                  <div class="no-discount-text">Sin descuento este día</div>
+                </div>
+                """
+
+            # ---- TARJETA PRODUCTO ----
+            # Nombre + marca
+            marca_html = f'<div><span class="product-brand">🏭 {info["marca"]}</span></div>' if info['marca'] else ''
+
+            # Estado
+            if info['estado']:
+                cls = 'status-activo' if info['estado'] == 'ACTIVO' else 'status-pasivo'
+                estado_html = f'<span class="status-pill {cls}">{info["estado"]}</span>'
+            else:
+                estado_html = ''
+
+            # Precios
+            if info['pvp'] and info['pvp_desc'] and info['pvp'] != info['pvp_desc']:
+                precios_html = f"""
+                <div class="price-row">
+                  <div class="price-block">
+                    <div class="price-label">Precio original</div>
+                    <div class="price-original">${info['pvp']:,.0f}</div>
+                  </div>
+                  <div class="price-block">
+                    <div class="price-label">Precio con descuento</div>
+                    <div class="price-discounted">${info['pvp_desc']:,.0f}</div>
+                  </div>
+                </div>
+                """
+            elif info['pvp']:
+                precios_html = f"""
+                <div class="price-row">
+                  <div class="price-block">
+                    <div class="price-label">Precio de venta</div>
+                    <div class="price-same">${info['pvp']:,.0f}</div>
+                  </div>
+                </div>
+                """
+            else:
+                precios_html = '<div style="color:#94A3B8;font-size:14px;">Precio no disponible</div>'
+
+            # Meta
+            ean_val = info['ean'] or '—'
+            sap_val = info['sap'] or '—'
+            meta_html = f"""
+            <div class="meta-grid">
+              <div class="meta-item">
+                <div class="meta-label">EAN</div>
+                <div class="meta-value">{ean_val}</div>
+              </div>
+              <div class="meta-item">
+                <div class="meta-label">SAP</div>
+                <div class="meta-value">{sap_val}</div>
+              </div>
+            </div>
+            """
+
+            info_card = f"""
+            <div class="info-card">
+              <div>
+                <div class="product-name">{info['nombre']}</div>
+                {marca_html}
+                {estado_html}
+              </div>
+              <div class="divider"></div>
+              {precios_html}
+              <div class="divider"></div>
+              {meta_html}
+            </div>
+            """
+
+            # Render grid
+            st.markdown(f"""
+            <div class="result-grid">
+              {discount_card}
+              {info_card}
+            </div>
+            """, unsafe_allow_html=True)
+
+            # Múltiples resultados
+            if len(resultado) > 1:
+                with st.expander(f"⚠️ {len(resultado)} coincidencias encontradas — mostrando la primera"):
+                    st.dataframe(resultado, use_container_width=True, hide_index=True)
+
+            # Debug
+            debug_col, _ = st.columns([1, 3])
+            with debug_col:
+                st.session_state.debug = st.checkbox("Modo diagnóstico", value=st.session_state.debug)
+
+            if st.session_state.debug:
+                st.markdown('<div class="debug-wrap">', unsafe_allow_html=True)
+                with st.expander("🔧 Datos técnicos"):
+                    st.write("**Información extraída:**")
+                    st.json(info)
+                    st.write("**Fila completa:**")
+                    st.dataframe(pd.DataFrame([fila]), use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
